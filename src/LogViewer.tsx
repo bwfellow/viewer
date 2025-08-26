@@ -111,71 +111,35 @@ export function LogViewer() {
   
   return (
     <div className="space-y-6">
-      {/* Enhanced Stats Dashboard */}
-      <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
-        <div className="bg-white p-4 rounded-lg shadow border">
-          <h3 className="text-sm font-medium text-gray-500">Total Logs</h3>
-          <p className="text-2xl font-bold text-gray-900">{stats.total}</p>
-          {logs.totalResults !== undefined && logs.totalResults !== stats.total && (
-            <p className="text-xs text-gray-500">({logs.totalResults} filtered)</p>
-          )}
-        </div>
-        <div className="bg-white p-4 rounded-lg shadow border">
-          <h3 className="text-sm font-medium text-gray-500">Recent (1h)</h3>
-          <p className="text-2xl font-bold text-gray-900">{stats.recentCount}</p>
-        </div>
-        <div className="bg-white p-4 rounded-lg shadow border">
-          <h3 className="text-sm font-medium text-gray-500">Errors</h3>
-          <p className="text-2xl font-bold text-red-600">{stats.byLevel.error || 0}</p>
-        </div>
-        <div className="bg-white p-4 rounded-lg shadow border">
-          <h3 className="text-sm font-medium text-gray-500">Warnings</h3>
-          <p className="text-2xl font-bold text-yellow-600">{stats.byLevel.warn || 0}</p>
-        </div>
-        <div className="bg-white p-4 rounded-lg shadow border">
-          <h3 className="text-sm font-medium text-gray-500">Storage Used</h3>
-          <p className="text-2xl font-bold text-blue-600">{formatBytes(storageStats.totalSizeBytes)}</p>
-        </div>
-        <div className="bg-white p-4 rounded-lg shadow border">
-          <h3 className="text-sm font-medium text-gray-500">Cleanup Available</h3>
-          <p className="text-2xl font-bold text-purple-600">{storageStats.logsByPeriod.older}</p>
-          <p className="text-xs text-gray-500">logs &gt; 30d old</p>
-        </div>
-      </div>
-      
-      {/* Storage Breakdown */}
-      {storageStats.totalLogs > 0 && (
-        <div className="bg-white p-4 rounded-lg shadow border">
-          <h3 className="text-lg font-medium text-gray-900 mb-4">Storage Breakdown</h3>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div className="text-center">
-              <p className="text-sm font-medium text-gray-500">Last 24h</p>
-              <p className="text-lg font-bold text-green-600">{storageStats.logsByPeriod.last24h}</p>
-              <p className="text-xs text-gray-500">{formatBytes(storageStats.sizeByPeriod.last24h)}</p>
-            </div>
-            <div className="text-center">
-              <p className="text-sm font-medium text-gray-500">Last 7d</p>
-              <p className="text-lg font-bold text-blue-600">{storageStats.logsByPeriod.last7d}</p>
-              <p className="text-xs text-gray-500">{formatBytes(storageStats.sizeByPeriod.last7d)}</p>
-            </div>
-            <div className="text-center">
-              <p className="text-sm font-medium text-gray-500">Last 30d</p>
-              <p className="text-lg font-bold text-yellow-600">{storageStats.logsByPeriod.last30d}</p>
-              <p className="text-xs text-gray-500">{formatBytes(storageStats.sizeByPeriod.last30d)}</p>
-            </div>
-            <div className="text-center">
-              <p className="text-sm font-medium text-gray-500">Older</p>
-              <p className="text-lg font-bold text-red-600">{storageStats.logsByPeriod.older}</p>
-              <p className="text-xs text-gray-500">{formatBytes(storageStats.sizeByPeriod.older)}</p>
-            </div>
+      {/* App Stats Dashboard */}
+      {selectedApp && (
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div className="bg-white p-4 rounded-lg shadow border">
+            <h3 className="text-sm font-medium text-gray-500">Total Logs</h3>
+            <p className="text-2xl font-bold text-gray-900">{stats.total}</p>
+            {logs.totalResults !== undefined && logs.totalResults !== stats.total && (
+              <p className="text-xs text-gray-500">({logs.totalResults} filtered)</p>
+            )}
+          </div>
+          <div className="bg-white p-4 rounded-lg shadow border">
+            <h3 className="text-sm font-medium text-gray-500">Recent (1h)</h3>
+            <p className="text-2xl font-bold text-gray-900">{stats.recentCount}</p>
+          </div>
+          <div className="bg-white p-4 rounded-lg shadow border">
+            <h3 className="text-sm font-medium text-gray-500">Errors</h3>
+            <p className="text-2xl font-bold text-red-600">{stats.byLevel.error || 0}</p>
+          </div>
+          <div className="bg-white p-4 rounded-lg shadow border">
+            <h3 className="text-sm font-medium text-gray-500">Warnings</h3>
+            <p className="text-2xl font-bold text-yellow-600">{stats.byLevel.warn || 0}</p>
           </div>
         </div>
       )}
       
-      {/* App Health Overview */}
+      {/* App Selection Grid */}
       {!selectedApp && apps.length > 0 && (
         <div className="bg-white p-4 rounded-lg shadow border">
-          <h3 className="text-lg font-medium text-gray-900 mb-4">App Health Overview</h3>
+          <h3 className="text-lg font-medium text-gray-900 mb-4">Select an App to View Logs</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {apps.map((app) => {
               const appLogCount = stats.byApp[app._id] || 0;
@@ -253,23 +217,14 @@ export function LogViewer() {
 
         {/* Basic Filters */}
         <div className="flex flex-wrap gap-4 items-center mb-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              App Filter
-            </label>
-            <select
-              value={selectedApp}
-              onChange={(e) => setSelectedApp(e.target.value as Id<"apps"> | "")}
-              className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+          {selectedApp && (
+            <button
+              onClick={() => setSelectedApp("")}
+              className="px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 transition-colors"
             >
-              <option value="">All Apps</option>
-              {apps.map((app) => (
-                <option key={app._id} value={app._id}>
-                  {app.name}
-                </option>
-              ))}
-            </select>
-          </div>
+              ← Back to App Selection
+            </button>
+          )}
           
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
