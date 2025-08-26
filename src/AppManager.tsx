@@ -116,6 +116,7 @@ export function AppManager() {
         headers: {
           'Content-Type': 'application/json',
         },
+        mode: 'cors',
       });
 
       console.log('GET Response Status:', getResponse.status);
@@ -133,6 +134,7 @@ export function AppManager() {
         headers: {
           'Content-Type': 'application/json',
         },
+        mode: 'cors',
         body: JSON.stringify(testLogData),
       });
 
