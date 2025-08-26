@@ -93,10 +93,10 @@ function processConvexLogEvent(event: any, appId: any) {
           functionType: event.function?.type,
           duration: event.execution_time_ms,
           status: event.status,
-          error: event.error_message,
+          error: typeof event.error_message === 'string' ? event.error_message : undefined,
           cached: typeof event.function?.cached === 'boolean' ? event.function.cached : undefined,
-          mutationQueueLength: event.mutation_queue_length,
-          mutationRetryCount: event.mutation_retry_count,
+          mutationQueueLength: typeof event.mutation_queue_length === 'number' ? event.mutation_queue_length : undefined,
+          mutationRetryCount: typeof event.mutation_retry_count === 'number' ? event.mutation_retry_count : undefined,
           usage: event.usage ? {
             databaseReadBytes: event.usage.database_read_bytes,
             databaseWriteBytes: event.usage.database_write_bytes,
