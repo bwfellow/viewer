@@ -77,12 +77,20 @@ export const updateApp = mutation({
       throw new Error("App not found or access denied");
     }
 
+    // Validate name if provided
+    if (args.name !== undefined) {
+      if (!args.name.trim()) {
+        throw new Error("App name cannot be empty");
+      }
+    }
+
     const updates: any = {};
-    if (args.name !== undefined) updates.name = args.name;
+    if (args.name !== undefined) updates.name = args.name.trim();
     if (args.description !== undefined) updates.description = args.description;
     if (args.isActive !== undefined) updates.isActive = args.isActive;
 
     await ctx.db.patch(args.appId, updates);
+    return { success: true };
   },
 });
 

@@ -8,6 +8,8 @@ export function AppManager() {
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [newAppName, setNewAppName] = useState("");
   const [newAppDescription, setNewAppDescription] = useState("");
+  const [editingAppId, setEditingAppId] = useState<Id<"apps"> | null>(null);
+  const [editingAppName, setEditingAppName] = useState("");
   
   const apps = useQuery(api.apps.getUserApps);
   const webhookBaseUrl = useQuery(api.config.getWebhookUrl);
@@ -284,18 +286,76 @@ export function AppManager() {
             <div key={app._id} className="bg-white p-6 rounded-lg shadow border">
               <div className="flex justify-between items-start mb-4">
                 <div className="flex-1">
-                  <div className="flex items-center gap-3 mb-2">
-                    <h3 className="text-lg font-medium text-gray-900">{app.name}</h3>
-                    <span
-                      className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                        app.isActive
-                          ? "bg-green-100 text-green-800"
-                          : "bg-red-100 text-red-800"
-                      }`}
+                                  <div className="flex items-center gap-3 mb-2">
+                  {editingAppId === app._id ? (
+                    <form 
+                      className="flex items-center gap-2"
+                      onSubmit={async (e) => {
+                        e.preventDefault();
+                        try {
+                          await updateApp({ 
+                            appId: app._id, 
+                            name: editingAppName 
+                          });
+                          setEditingAppId(null);
+                          setEditingAppName("");
+                          toast.success("App name updated successfully!");
+                        } catch (error) {
+                          toast.error(`Failed to update app name: ${error instanceof Error ? error.message : 'Unknown error'}`);
+                        }
+                      }}
                     >
-                      {app.isActive ? "Active" : "Inactive"}
-                    </span>
-                  </div>
+                      <input
+                        type="text"
+                        value={editingAppName}
+                        onChange={(e) => setEditingAppName(e.target.value)}
+                        className="px-2 py-1 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-base"
+                        placeholder="Enter new name"
+                        autoFocus
+                        required
+                      />
+                      <button
+                        type="submit"
+                        className="px-2 py-1 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors text-sm"
+                      >
+                        Save
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditingAppId(null);
+                          setEditingAppName("");
+                        }}
+                        className="px-2 py-1 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 transition-colors text-sm"
+                      >
+                        Cancel
+                      </button>
+                    </form>
+                  ) : (
+                    <>
+                      <h3 className="text-lg font-medium text-gray-900">{app.name}</h3>
+                      <button
+                        onClick={() => {
+                          setEditingAppId(app._id);
+                          setEditingAppName(app.name);
+                        }}
+                        className="text-blue-600 hover:text-blue-800"
+                        title="Edit app name"
+                      >
+                        ✏️
+                      </button>
+                    </>
+                  )}
+                  <span
+                    className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                      app.isActive
+                        ? "bg-green-100 text-green-800"
+                        : "bg-red-100 text-red-800"
+                    }`}
+                  >
+                    {app.isActive ? "Active" : "Inactive"}
+                  </span>
+                </div>
                   {app.description && (
                     <p className="text-gray-600 mb-3">{app.description}</p>
                   )}
