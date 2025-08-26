@@ -21,10 +21,26 @@ export const processWebhookLog = mutation({
         throw new Error("Invalid API key or app is inactive");
       }
 
-      const logEntry = JSON.parse(args.logData);
+      // Split by newlines and parse each line as a separate JSON object
+      const logLines = args.logData.trim().split('\n');
+      const events = [];
       
-      // Handle both single events and arrays of events
-      const events = Array.isArray(logEntry) ? logEntry : [logEntry];
+      for (const line of logLines) {
+        if (line.trim()) {
+          try {
+            const logEntry = JSON.parse(line);
+            if (Array.isArray(logEntry)) {
+              events.push(...logEntry);
+            } else {
+              events.push(logEntry);
+            }
+          } catch (error) {
+            console.error('Failed to parse log line:', error);
+            console.error('Problematic line:', line);
+            // Continue processing other lines even if one fails
+          }
+        }
+      }
       
       for (const event of events) {
         const processedLog = processConvexLogEvent(event, app._id);
@@ -58,7 +74,7 @@ function processConvexLogEvent(event: any, appId: any) {
         metadata: {
           functionName: event.function?.path,
           functionType: event.function?.type,
-          cached: event.function?.cached,
+          cached: typeof event.function?.cached === 'boolean' ? event.function.cached : undefined,
           isTruncated: event.is_truncated,
           systemCode: event.system_code,
         },
@@ -78,7 +94,7 @@ function processConvexLogEvent(event: any, appId: any) {
           duration: event.execution_time_ms,
           status: event.status,
           error: event.error_message,
-          cached: event.function?.cached,
+          cached: typeof event.function?.cached === 'boolean' ? event.function.cached : undefined,
           mutationQueueLength: event.mutation_queue_length,
           mutationRetryCount: event.mutation_retry_count,
           usage: event.usage ? {
