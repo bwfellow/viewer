@@ -101,6 +101,33 @@ export function AppManager() {
       
       const webhookUrl = `${webhookBaseUrl}/webhook/logs?api_key=${apiKey}`;
 
+      // Show debug info
+      console.group('🔍 Webhook Test Debug Info');
+      console.log('URL:', webhookUrl);
+      console.log('Request Data:', testLogData);
+      console.log('Headers:', {
+        'Content-Type': 'application/json'
+      });
+
+      // First try a GET request to verify the endpoint is accessible
+      console.log('🔍 Testing GET request first...');
+      const getResponse = await fetch(webhookUrl, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      console.log('GET Response Status:', getResponse.status);
+      const getText = await getResponse.text();
+      try {
+        console.log('GET Response:', JSON.parse(getText));
+      } catch {
+        console.log('GET Response (raw):', getText);
+      }
+
+      // Now try the actual POST request
+      console.log('🔍 Sending POST request...');
       const response = await fetch(webhookUrl, {
         method: 'POST',
         headers: {
@@ -109,22 +136,59 @@ export function AppManager() {
         body: JSON.stringify(testLogData),
       });
 
+      console.log('POST Response Status:', response.status);
+      const responseText = await response.text();
+      console.log('POST Response (raw):', responseText);
+
       if (response.ok) {
-        const result = await response.json();
+        const result = JSON.parse(responseText);
+        console.log('POST Response (parsed):', result);
+        console.groupEnd();
         toast.success(`Webhook test successful! Check the Log Viewer for the test message.`);
       } else {
-        const errorText = await response.text();
         let errorMessage;
         try {
-          const errorJson = JSON.parse(errorText);
+          const errorJson = JSON.parse(responseText);
           errorMessage = errorJson.error || 'Unknown error';
+          console.log('Error Response (parsed):', errorJson);
         } catch {
-          errorMessage = `HTTP ${response.status}: ${errorText.slice(0, 100)}...`;
+          errorMessage = `HTTP ${response.status}: ${responseText.slice(0, 100)}...`;
+          console.log('Error Response (raw):', responseText);
         }
+        console.groupEnd();
         toast.error(`Webhook test failed: ${errorMessage}`);
       }
     } catch (error) {
-      toast.error(`Webhook test failed: ${error instanceof Error ? error.message : 'Network error'}`);
+      console.error('🔥 Webhook Test Error:', error);
+      console.groupEnd();
+      
+      // More detailed error message
+      let errorMessage = 'Network error';
+      if (error instanceof Error) {
+        errorMessage = `${error.name}: ${error.message}`;
+        if (error.cause) {
+          errorMessage += `\nCause: ${error.cause}`;
+        }
+        if ('code' in error) {
+          errorMessage += `\nCode: ${(error as any).code}`;
+        }
+      }
+      
+      toast.error(`Webhook test failed: ${errorMessage}`, {
+        duration: 5000, // Show longer for errors
+      });
+
+      // Show a help message
+      toast.info(
+        "Debug tips:\n" +
+        "1. Check browser console for details\n" +
+        "2. Verify the webhook URL is correct\n" +
+        "3. Check if CORS is enabled\n" +
+        "4. Try using curl to test the endpoint",
+        {
+          duration: 10000,
+        }
+      );
     }
   };
   
