@@ -184,17 +184,20 @@ export function LogViewer() {
         <div className="bg-white p-4 rounded-lg shadow border">
           <h3 className="text-lg font-medium text-gray-900 mb-4">Select an App to View Logs</h3>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            {apps.map((app) => {
-              // We'll use a separate component for each app card to properly handle hooks
-              return <AppCard key={app._id} app={app} onSelect={() => setSelectedApp(app._id)} />;
-            })}
-
+            {apps.map((app) => (
+              <AppCard
+                key={app._id}
+                app={app}
+                onSelect={() => setSelectedApp(app._id)}
+                formatBytes={formatBytes}
+              />
+            ))}
           </div>
         </div>
       )}
+      
       {/* Enhanced Filters and Controls */}
-      <div
-className="bg-white p-4 rounded-lg shadow border">
+      <div className="bg-white p-4 rounded-lg shadow border">
         {/* Search Bar */}
         <div className="mb-4">
           <label className="block text-sm font-medium text-gray-700 mb-2">

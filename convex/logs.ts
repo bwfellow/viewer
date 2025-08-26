@@ -679,3 +679,68 @@ export const cleanupOldLogsManual = mutation({
     };
   },
 });
+
+// Get hourly log counts for charting
+export const getHourlyLogCounts = query({
+  args: {
+    appId: v.optional(v.id("apps")),
+    hours: v.optional(v.number()), // Default to 24 hours
+  },
+  handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) {
+      throw new Error("Must be authenticated");
+    }
+
+    const hours = args.hours || 24;
+    const now = Date.now();
+    const startTime = now - (hours * 60 * 60 * 1000);
+
+    // Get user's apps
+    const userApps = await ctx.db
+      .query("apps")
+      .withIndex("by_created_by", (q) => q.eq("createdBy", userId))
+      .collect();
+    
+    const appIds = userApps.map(app => app._id);
+
+    // Get logs for the time period
+    const allLogs = await ctx.db.query("logs").collect();
+    const userLogs = allLogs.filter(log => 
+      log.timestamp >= startTime && 
+      (args.appId ? log.appId === args.appId : appIds.includes(log.appId))
+    );
+
+    // Group logs by hour
+    const hourlyData: Record<string, number> = {};
+    
+    // Initialize all hours in the range
+    for (let i = 0; i < hours; i++) {
+      const hourTimestamp = Math.floor((now - (i * 60 * 60 * 1000)) / (60 * 60 * 1000)) * (60 * 60 * 1000);
+      const hourKey = new Date(hourTimestamp).toISOString().slice(0, 13) + ":00:00.000Z";
+      hourlyData[hourKey] = 0;
+    }
+
+    // Count logs for each hour
+    for (const log of userLogs) {
+      const hourTimestamp = Math.floor(log.timestamp / (60 * 60 * 1000)) * (60 * 60 * 1000);
+      const hourKey = new Date(hourTimestamp).toISOString().slice(0, 13) + ":00:00.000Z";
+      hourlyData[hourKey] = (hourlyData[hourKey] || 0) + 1;
+    }
+
+    // Convert to sorted array
+    const sortedData = Object.entries(hourlyData)
+      .map(([timestamp, count]) => ({
+        timestamp: new Date(timestamp).getTime(),
+        count,
+        hour: new Date(timestamp).getHours(),
+        label: new Date(timestamp).toLocaleTimeString('en-US', { 
+          hour: 'numeric', 
+          hour12: true 
+        })
+      }))
+      .sort((a, b) => a.timestamp - b.timestamp);
+
+    return sortedData;
+  },
+});

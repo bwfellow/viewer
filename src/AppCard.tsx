@@ -1,6 +1,7 @@
 import { useQuery } from "convex/react";
 import { api } from "../convex/_generated/api";
 import { Id } from "../convex/_generated/dataModel";
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
 interface AppCardProps {
   app: {
@@ -10,13 +11,15 @@ interface AppCardProps {
     isActive: boolean;
   };
   onSelect: () => void;
+  formatBytes: (bytes: number) => string;
 }
 
-export function AppCard({ app, onSelect }: AppCardProps) {
+export function AppCard({ app, onSelect, formatBytes }: AppCardProps) {
   const appStats = useQuery(api.logs.getLogStats, { appId: app._id });
   const appStorageStats = useQuery(api.logs.getStorageStats, { appId: app._id });
+  const hourlyData = useQuery(api.logs.getHourlyLogCounts, { appId: app._id, hours: 24 });
 
-  if (!appStats || !appStorageStats) {
+  if (!appStats || !appStorageStats || !hourlyData) {
     return (
       <div className="p-4 rounded-lg border-2 border-gray-200 bg-gray-50">
         <div className="animate-pulse flex space-x-4">
@@ -38,14 +41,6 @@ export function AppCard({ app, onSelect }: AppCardProps) {
     : app.isActive
     ? "border-yellow-200 bg-yellow-50 hover:bg-yellow-100"
     : "border-red-200 bg-red-50 hover:bg-red-100";
-
-  const formatBytes = (bytes: number) => {
-    if (bytes === 0) return '0 Bytes';
-    const k = 1024;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-  };
 
   return (
     <div
@@ -92,7 +87,7 @@ export function AppCard({ app, onSelect }: AppCardProps) {
       </div>
 
       {/* Storage Stats */}
-      <div className="border-t pt-3">
+      <div className="border-t pt-3 mb-4">
         <div className="flex justify-between items-baseline mb-2">
           <p className="text-sm font-medium text-gray-700">Storage Usage</p>
           <p className="text-xs text-gray-500">{formatBytes(appStorageStats.totalSizeBytes)}</p>
@@ -114,6 +109,48 @@ export function AppCard({ app, onSelect }: AppCardProps) {
             <p className="text-gray-500">Older</p>
             <p className="font-medium text-red-600">{appStorageStats.logsByPeriod.older}</p>
           </div>
+        </div>
+      </div>
+
+      {/* Hourly Activity Chart */}
+      <div className="border-t pt-3">
+        <p className="text-sm font-medium text-gray-700 mb-2">24-Hour Activity</p>
+        <div className="h-20">
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={hourlyData}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+              <XAxis 
+                dataKey="hour"
+                axisLine={false}
+                tickLine={false}
+                tick={{ fontSize: 10, fill: '#6b7280' }}
+                interval="preserveStartEnd"
+              />
+              <YAxis hide />
+              <Tooltip 
+                content={({ active, payload, label }) => {
+                  if (active && payload && payload.length) {
+                    const data = payload[0].payload;
+                    return (
+                      <div className="bg-white p-2 border rounded shadow text-xs">
+                        <p>{data.label}</p>
+                        <p className="text-blue-600 font-medium">{data.count} logs</p>
+                      </div>
+                    );
+                  }
+                  return null;
+                }}
+              />
+              <Line 
+                type="monotone" 
+                dataKey="count" 
+                stroke="#3b82f6" 
+                strokeWidth={2}
+                dot={false}
+                activeDot={{ r: 3, stroke: '#3b82f6', strokeWidth: 2, fill: '#fff' }}
+              />
+            </LineChart>
+          </ResponsiveContainer>
         </div>
       </div>
     </div>
