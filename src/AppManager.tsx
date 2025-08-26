@@ -1,0 +1,248 @@
+import { useState } from "react";
+import { useQuery, useMutation } from "convex/react";
+import { api } from "../convex/_generated/api";
+import { toast } from "sonner";
+import { Id } from "../convex/_generated/dataModel";
+
+export function AppManager() {
+  const [showCreateForm, setShowCreateForm] = useState(false);
+  const [newAppName, setNewAppName] = useState("");
+  const [newAppDescription, setNewAppDescription] = useState("");
+  
+  const apps = useQuery(api.apps.getUserApps);
+  const createApp = useMutation(api.apps.createApp);
+  const updateApp = useMutation(api.apps.updateApp);
+  const deleteApp = useMutation(api.apps.deleteApp);
+  const regenerateApiKey = useMutation(api.apps.regenerateApiKey);
+  
+  const handleCreateApp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newAppName.trim()) return;
+    
+    try {
+      await createApp({
+        name: newAppName.trim(),
+        description: newAppDescription.trim() || undefined,
+      });
+      
+      setNewAppName("");
+      setNewAppDescription("");
+      setShowCreateForm(false);
+      toast.success("App created successfully!");
+    } catch (error) {
+      toast.error("Failed to create app");
+    }
+  };
+  
+  const handleToggleApp = async (appId: Id<"apps">, isActive: boolean) => {
+    try {
+      await updateApp({ appId, isActive: !isActive });
+      toast.success(isActive ? "App deactivated" : "App activated");
+    } catch (error) {
+      toast.error("Failed to update app");
+    }
+  };
+  
+  const handleDeleteApp = async (appId: Id<"apps">, appName: string) => {
+    if (!confirm(`Are you sure you want to delete "${appName}"? This will also delete all its logs.`)) {
+      return;
+    }
+    
+    try {
+      await deleteApp({ appId });
+      toast.success("App deleted successfully");
+    } catch (error) {
+      toast.error("Failed to delete app");
+    }
+  };
+  
+  const handleRegenerateApiKey = async (appId: Id<"apps">) => {
+    if (!confirm("Are you sure you want to regenerate the API key? The old key will stop working immediately.")) {
+      return;
+    }
+    
+    try {
+      const newKey = await regenerateApiKey({ appId });
+      toast.success("API key regenerated successfully");
+      // Copy to clipboard
+      navigator.clipboard.writeText(newKey);
+      toast.info("New API key copied to clipboard");
+    } catch (error) {
+      toast.error("Failed to regenerate API key");
+    }
+  };
+  
+  const copyApiKey = (apiKey: string) => {
+    navigator.clipboard.writeText(apiKey);
+    toast.success("API key copied to clipboard");
+  };
+  
+  if (apps === undefined) {
+    return (
+      <div className="flex justify-center items-center h-64">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+      </div>
+    );
+  }
+  
+  return (
+    <div className="space-y-6">
+      {/* Header with Create Button */}
+      <div className="flex justify-between items-center">
+        <div>
+          <h2 className="text-2xl font-bold text-gray-900">Your Applications</h2>
+          <p className="text-gray-600">Manage your apps and their API keys</p>
+        </div>
+        <button
+          onClick={() => setShowCreateForm(true)}
+          className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+        >
+          Add New App
+        </button>
+      </div>
+      
+      {/* Create App Form */}
+      {showCreateForm && (
+        <div className="bg-white p-6 rounded-lg shadow border">
+          <h3 className="text-lg font-medium text-gray-900 mb-4">Create New App</h3>
+          <form onSubmit={handleCreateApp} className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                App Name *
+              </label>
+              <input
+                type="text"
+                value={newAppName}
+                onChange={(e) => setNewAppName(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder="My Awesome App"
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Description
+              </label>
+              <textarea
+                value={newAppDescription}
+                onChange={(e) => setNewAppDescription(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder="Brief description of your app"
+                rows={3}
+              />
+            </div>
+            <div className="flex gap-2">
+              <button
+                type="submit"
+                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+              >
+                Create App
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowCreateForm(false)}
+                className="px-4 py-2 bg-gray-300 text-gray-700 rounded-md hover:bg-gray-400 transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+      
+      {/* Apps List */}
+      <div className="space-y-4">
+        {apps.length === 0 ? (
+          <div className="bg-white p-8 rounded-lg shadow border text-center">
+            <p className="text-gray-500 mb-4">No apps created yet</p>
+            <button
+              onClick={() => setShowCreateForm(true)}
+              className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+            >
+              Create Your First App
+            </button>
+          </div>
+        ) : (
+          apps.map((app) => (
+            <div key={app._id} className="bg-white p-6 rounded-lg shadow border">
+              <div className="flex justify-between items-start mb-4">
+                <div className="flex-1">
+                  <div className="flex items-center gap-3 mb-2">
+                    <h3 className="text-lg font-medium text-gray-900">{app.name}</h3>
+                    <span
+                      className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                        app.isActive
+                          ? "bg-green-100 text-green-800"
+                          : "bg-red-100 text-red-800"
+                      }`}
+                    >
+                      {app.isActive ? "Active" : "Inactive"}
+                    </span>
+                  </div>
+                  {app.description && (
+                    <p className="text-gray-600 mb-3">{app.description}</p>
+                  )}
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => handleToggleApp(app._id, app.isActive)}
+                    className={`px-3 py-1 text-sm rounded-md transition-colors ${
+                      app.isActive
+                        ? "bg-red-100 text-red-700 hover:bg-red-200"
+                        : "bg-green-100 text-green-700 hover:bg-green-200"
+                    }`}
+                  >
+                    {app.isActive ? "Deactivate" : "Activate"}
+                  </button>
+                  <button
+                    onClick={() => handleDeleteApp(app._id, app.name)}
+                    className="px-3 py-1 text-sm bg-red-100 text-red-700 rounded-md hover:bg-red-200 transition-colors"
+                  >
+                    Delete
+                  </button>
+                </div>
+              </div>
+              
+              {/* API Key Section */}
+              <div className="border-t pt-4">
+                <div className="flex justify-between items-center mb-2">
+                  <label className="text-sm font-medium text-gray-700">API Key</label>
+                  <button
+                    onClick={() => handleRegenerateApiKey(app._id)}
+                    className="text-xs text-blue-600 hover:text-blue-800"
+                  >
+                    Regenerate
+                  </button>
+                </div>
+                <div className="flex gap-2">
+                  <code className="flex-1 bg-gray-100 text-gray-800 p-2 rounded text-sm font-mono break-all">
+                    {app.apiKey}
+                  </code>
+                  <button
+                    onClick={() => copyApiKey(app.apiKey)}
+                    className="px-3 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 transition-colors text-sm"
+                  >
+                    Copy
+                  </button>
+                </div>
+                
+                {/* Webhook URL */}
+                <div className="mt-3">
+                  <label className="text-sm font-medium text-gray-700 mb-1 block">
+                    Webhook URL
+                  </label>
+                  <code className="block bg-blue-50 text-blue-800 p-2 rounded text-sm font-mono break-all">
+                    {window.location.origin}/webhook/logs?api_key={app.apiKey}
+                  </code>
+                  <p className="text-xs text-gray-500 mt-1">
+                    Or send the API key in the "x-api-key" header
+                  </p>
+                </div>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
