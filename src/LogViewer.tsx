@@ -36,7 +36,9 @@ export function LogViewer() {
     appId: selectedApp || undefined,
   });
   
-  const storageStats = useQuery(api.logs.getStorageStats);
+  const storageStats = useQuery(api.logs.getStorageStats, {
+    appId: selectedApp || undefined,
+  });
   const logSources = useQuery(api.logs.getLogSources, {
     appId: selectedApp || undefined,
   });
@@ -113,57 +115,115 @@ export function LogViewer() {
     <div className="space-y-6">
       {/* App Stats Dashboard */}
       {selectedApp && (
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <div className="bg-white p-4 rounded-lg shadow border">
-            <h3 className="text-sm font-medium text-gray-500">Total Logs</h3>
-            <p className="text-2xl font-bold text-gray-900">{stats.total}</p>
-            {logs.totalResults !== undefined && logs.totalResults !== stats.total && (
-              <p className="text-xs text-gray-500">({logs.totalResults} filtered)</p>
-            )}
+        <>
+          <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
+            <div className="bg-white p-4 rounded-lg shadow border">
+              <h3 className="text-sm font-medium text-gray-500">Total Logs</h3>
+              <p className="text-2xl font-bold text-gray-900">{stats.total}</p>
+              {logs.totalResults !== undefined && logs.totalResults !== stats.total && (
+                <p className="text-xs text-gray-500">({logs.totalResults} filtered)</p>
+              )}
+            </div>
+            <div className="bg-white p-4 rounded-lg shadow border">
+              <h3 className="text-sm font-medium text-gray-500">Recent (1h)</h3>
+              <p className="text-2xl font-bold text-gray-900">{stats.recentCount}</p>
+            </div>
+            <div className="bg-white p-4 rounded-lg shadow border">
+              <h3 className="text-sm font-medium text-gray-500">Errors</h3>
+              <p className="text-2xl font-bold text-red-600">{stats.byLevel.error || 0}</p>
+            </div>
+            <div className="bg-white p-4 rounded-lg shadow border">
+              <h3 className="text-sm font-medium text-gray-500">Warnings</h3>
+              <p className="text-2xl font-bold text-yellow-600">{stats.byLevel.warn || 0}</p>
+            </div>
+            <div className="bg-white p-4 rounded-lg shadow border">
+              <h3 className="text-sm font-medium text-gray-500">Storage Used</h3>
+              <p className="text-2xl font-bold text-blue-600">{formatBytes(storageStats.totalSizeBytes)}</p>
+            </div>
+            <div className="bg-white p-4 rounded-lg shadow border">
+              <h3 className="text-sm font-medium text-gray-500">Cleanup Available</h3>
+              <p className="text-2xl font-bold text-purple-600">{storageStats.logsByPeriod.older}</p>
+              <p className="text-xs text-gray-500">logs &gt; 30d old</p>
+            </div>
           </div>
-          <div className="bg-white p-4 rounded-lg shadow border">
-            <h3 className="text-sm font-medium text-gray-500">Recent (1h)</h3>
-            <p className="text-2xl font-bold text-gray-900">{stats.recentCount}</p>
-          </div>
-          <div className="bg-white p-4 rounded-lg shadow border">
-            <h3 className="text-sm font-medium text-gray-500">Errors</h3>
-            <p className="text-2xl font-bold text-red-600">{stats.byLevel.error || 0}</p>
-          </div>
-          <div className="bg-white p-4 rounded-lg shadow border">
-            <h3 className="text-sm font-medium text-gray-500">Warnings</h3>
-            <p className="text-2xl font-bold text-yellow-600">{stats.byLevel.warn || 0}</p>
-          </div>
-        </div>
+          
+          {/* Storage Breakdown */}
+          {storageStats.totalLogs > 0 && (
+            <div className="bg-white p-4 rounded-lg shadow border">
+              <h3 className="text-lg font-medium text-gray-900 mb-4">Storage Breakdown</h3>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div className="text-center">
+                  <p className="text-sm font-medium text-gray-500">Last 24h</p>
+                  <p className="text-lg font-bold text-green-600">{storageStats.logsByPeriod.last24h}</p>
+                  <p className="text-xs text-gray-500">{formatBytes(storageStats.sizeByPeriod.last24h)}</p>
+                </div>
+                <div className="text-center">
+                  <p className="text-sm font-medium text-gray-500">Last 7d</p>
+                  <p className="text-lg font-bold text-blue-600">{storageStats.logsByPeriod.last7d}</p>
+                  <p className="text-xs text-gray-500">{formatBytes(storageStats.sizeByPeriod.last7d)}</p>
+                </div>
+                <div className="text-center">
+                  <p className="text-sm font-medium text-gray-500">Last 30d</p>
+                  <p className="text-lg font-bold text-yellow-600">{storageStats.logsByPeriod.last30d}</p>
+                  <p className="text-xs text-gray-500">{formatBytes(storageStats.sizeByPeriod.last30d)}</p>
+                </div>
+                <div className="text-center">
+                  <p className="text-sm font-medium text-gray-500">Older</p>
+                  <p className="text-lg font-bold text-red-600">{storageStats.logsByPeriod.older}</p>
+                  <p className="text-xs text-gray-500">{formatBytes(storageStats.sizeByPeriod.older)}</p>
+                </div>
+              </div>
+            </div>
+          )}
+        </>
       )}
       
       {/* App Selection Grid */}
       {!selectedApp && apps.length > 0 && (
         <div className="bg-white p-4 rounded-lg shadow border">
           <h3 className="text-lg font-medium text-gray-900 mb-4">Select an App to View Logs</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             {apps.map((app) => {
-              const appLogCount = stats.byApp[app._id] || 0;
-              const isHealthy = app.isActive && appLogCount > 0;
+              const appStats = useQuery(api.logs.getLogStats, { appId: app._id });
+              const appStorageStats = useQuery(api.logs.getStorageStats, { appId: app._id });
+              
+              if (!appStats || !appStorageStats) {
+                return (
+                  <div key={app._id} className="p-4 rounded-lg border-2 border-gray-200 bg-gray-50">
+                    <div className="animate-pulse flex space-x-4">
+                      <div className="flex-1 space-y-4">
+                        <div className="h-4 bg-gray-200 rounded w-3/4"></div>
+                        <div className="space-y-2">
+                          <div className="h-4 bg-gray-200 rounded"></div>
+                          <div className="h-4 bg-gray-200 rounded w-5/6"></div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              }
+
+              const isHealthy = app.isActive && appStats.total > 0;
+              const statusColor = isHealthy
+                ? "border-green-200 bg-green-50 hover:bg-green-100"
+                : app.isActive
+                ? "border-yellow-200 bg-yellow-50 hover:bg-yellow-100"
+                : "border-red-200 bg-red-50 hover:bg-red-100";
               
               return (
                 <div
                   key={app._id}
-                  className={`p-3 rounded-lg border-2 cursor-pointer transition-colors ${
-                    isHealthy
-                      ? "border-green-200 bg-green-50 hover:bg-green-100"
-                      : app.isActive
-                      ? "border-yellow-200 bg-yellow-50 hover:bg-yellow-100"
-                      : "border-red-200 bg-red-50 hover:bg-red-100"
-                  }`}
+                  className={`p-4 rounded-lg border-2 cursor-pointer transition-colors ${statusColor}`}
                   onClick={() => setSelectedApp(app._id)}
                 >
-                  <div className="flex justify-between items-start">
+                  {/* Header */}
+                  <div className="flex justify-between items-start mb-4">
                     <div>
-                      <h4 className="font-medium text-gray-900">{app.name}</h4>
-                      <p className="text-sm text-gray-600">{appLogCount} logs</p>
+                      <h4 className="text-lg font-medium text-gray-900">{app.name}</h4>
+                      <p className="text-sm text-gray-600">{app.description}</p>
                     </div>
                     <span
-                      className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                      className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
                         isHealthy
                           ? "bg-green-100 text-green-800"
                           : app.isActive
@@ -173,6 +233,52 @@ export function LogViewer() {
                     >
                       {isHealthy ? "Healthy" : app.isActive ? "No Logs" : "Inactive"}
                     </span>
+                  </div>
+
+                  {/* Stats Grid */}
+                  <div className="grid grid-cols-2 gap-3 mb-4">
+                    <div className="bg-white p-2 rounded border">
+                      <p className="text-xs text-gray-500">Total Logs</p>
+                      <p className="text-lg font-semibold">{appStats.total}</p>
+                    </div>
+                    <div className="bg-white p-2 rounded border">
+                      <p className="text-xs text-gray-500">Recent (1h)</p>
+                      <p className="text-lg font-semibold">{appStats.recentCount}</p>
+                    </div>
+                    <div className="bg-white p-2 rounded border">
+                      <p className="text-xs text-gray-500">Errors</p>
+                      <p className="text-lg font-semibold text-red-600">{appStats.byLevel.error || 0}</p>
+                    </div>
+                    <div className="bg-white p-2 rounded border">
+                      <p className="text-xs text-gray-500">Warnings</p>
+                      <p className="text-lg font-semibold text-yellow-600">{appStats.byLevel.warn || 0}</p>
+                    </div>
+                  </div>
+
+                  {/* Storage Stats */}
+                  <div className="border-t pt-3">
+                    <div className="flex justify-between items-baseline mb-2">
+                      <p className="text-sm font-medium text-gray-700">Storage Usage</p>
+                      <p className="text-xs text-gray-500">{formatBytes(appStorageStats.totalSizeBytes)}</p>
+                    </div>
+                    <div className="grid grid-cols-4 gap-2 text-center text-xs">
+                      <div>
+                        <p className="text-gray-500">24h</p>
+                        <p className="font-medium text-green-600">{appStorageStats.logsByPeriod.last24h}</p>
+                      </div>
+                      <div>
+                        <p className="text-gray-500">7d</p>
+                        <p className="font-medium text-blue-600">{appStorageStats.logsByPeriod.last7d}</p>
+                      </div>
+                      <div>
+                        <p className="text-gray-500">30d</p>
+                        <p className="font-medium text-yellow-600">{appStorageStats.logsByPeriod.last30d}</p>
+                      </div>
+                      <div>
+                        <p className="text-gray-500">Older</p>
+                        <p className="font-medium text-red-600">{appStorageStats.logsByPeriod.older}</p>
+                      </div>
+                    </div>
                   </div>
                 </div>
               );

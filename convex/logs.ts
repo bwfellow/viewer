@@ -555,7 +555,9 @@ export const cleanupOldLogs = internalMutation({
 
 // Get storage usage statistics
 export const getStorageStats = query({
-  args: {},
+  args: {
+    appId: v.optional(v.id("apps")),
+  },
   handler: async (ctx) => {
     const userId = await getAuthUserId(ctx);
     if (!userId) {
@@ -570,9 +572,11 @@ export const getStorageStats = query({
     
     const appIds = userApps.map(app => app._id);
 
-    // Get all logs for user's apps
+    // Get logs for the app or all user's apps
     const allLogs = await ctx.db.query("logs").collect();
-    const userLogs = allLogs.filter(log => appIds.includes(log.appId));
+    const userLogs = allLogs.filter(log => 
+      args.appId ? log.appId === args.appId : appIds.includes(log.appId)
+    );
 
     // Calculate storage usage
     let totalSize = 0;
