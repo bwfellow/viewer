@@ -72,9 +72,7 @@ function processConvexLogEvent(event: any, appId: any) {
         source: event.function?.path,
         requestId: event.function?.request_id,
         metadata: {
-          functionName: event.function?.path,
-          functionType: event.function?.type,
-          cached: typeof event.function?.cached === 'boolean' ? event.function.cached : undefined,
+          ...event.function,
           isTruncated: event.is_truncated,
           systemCode: event.system_code,
         },
@@ -89,24 +87,13 @@ function processConvexLogEvent(event: any, appId: any) {
         source: event.function?.path,
         requestId: event.function?.request_id,
         metadata: {
-          functionName: event.function?.path,
-          functionType: event.function?.type,
+          ...event.function,
           duration: event.execution_time_ms,
           status: event.status,
-          error: typeof event.error_message === 'string' ? event.error_message : undefined,
-          cached: typeof event.function?.cached === 'boolean' ? event.function.cached : undefined,
-          mutationQueueLength: typeof event.mutation_queue_length === 'number' ? event.mutation_queue_length : undefined,
-          mutationRetryCount: typeof event.mutation_retry_count === 'number' ? event.mutation_retry_count : undefined,
-          usage: event.usage ? {
-            databaseReadBytes: event.usage.database_read_bytes,
-            databaseWriteBytes: event.usage.database_write_bytes,
-            databaseReadDocuments: event.usage.database_read_documents,
-            fileStorageReadBytes: event.usage.file_storage_read_bytes,
-            fileStorageWriteBytes: event.usage.file_storage_write_bytes,
-            vectorStorageReadBytes: event.usage.vector_storage_read_bytes,
-            vectorStorageWriteBytes: event.usage.vector_storage_write_bytes,
-            actionMemoryUsedMb: event.usage.action_memory_used_mb,
-          } : undefined,
+          error: event.error_message,
+          mutationQueueLength: event.mutation_queue_length,
+          mutationRetryCount: event.mutation_retry_count,
+          usage: event.usage,
           occInfo: event.occ_info,
           schedulerInfo: event.scheduler_info,
         },
@@ -118,9 +105,7 @@ function processConvexLogEvent(event: any, appId: any) {
         level: 'info',
         message: event.message || "Log stream verification",
         source: 'system',
-        metadata: {
-          eventType: 'verification',
-        },
+        metadata: event,
       };
 
     case 'scheduler_stats':
@@ -129,11 +114,7 @@ function processConvexLogEvent(event: any, appId: any) {
         level: 'info',
         message: `Scheduler stats: ${event.num_running_jobs} running jobs, ${event.lag_seconds}s lag`,
         source: 'scheduler',
-        metadata: {
-          eventType: 'scheduler_stats',
-          lagSeconds: event.lag_seconds,
-          numRunningJobs: event.num_running_jobs,
-        },
+        metadata: event,
       };
 
     case 'audit_log':
@@ -142,11 +123,7 @@ function processConvexLogEvent(event: any, appId: any) {
         level: 'info',
         message: `Audit log: ${event.audit_log_action}`,
         source: 'audit',
-        metadata: {
-          eventType: 'audit_log',
-          action: event.audit_log_action,
-          auditMetadata: event.audit_log_metadata,
-        },
+        metadata: event,
       };
 
     default:
@@ -158,15 +135,7 @@ function processConvexLogEvent(event: any, appId: any) {
         source: event.source || event.function?.path || event.topic,
         requestId: event.request_id || event.requestId || event.function?.request_id,
         userId: event.user_id || event.userId,
-        metadata: {
-          eventType: event.topic || 'unknown',
-          duration: event.duration || event.execution_time_ms,
-          functionName: event.function_name || event.functionName || event.function?.path,
-          args: event.args ? JSON.stringify(event.args) : undefined,
-          error: event.error || event.error_message,
-          environment: event.environment || event.env,
-          version: event.version,
-        },
+        metadata: event,
       };
   }
 }

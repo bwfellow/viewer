@@ -21,38 +21,7 @@ const applicationTables = {
     source: v.optional(v.string()), // function name or source
     requestId: v.optional(v.string()),
     userId: v.optional(v.string()),
-    metadata: v.optional(v.object({
-      duration: v.optional(v.number()),
-      functionName: v.optional(v.string()),
-      functionType: v.optional(v.string()),
-      args: v.optional(v.string()),
-      error: v.optional(v.string()),
-      environment: v.optional(v.string()), // prod, dev, staging
-      version: v.optional(v.string()),
-      eventType: v.optional(v.string()),
-      status: v.optional(v.string()),
-      cached: v.optional(v.boolean()),
-      isTruncated: v.optional(v.boolean()),
-      systemCode: v.optional(v.string()),
-      mutationQueueLength: v.optional(v.number()),
-      mutationRetryCount: v.optional(v.number()),
-      lagSeconds: v.optional(v.number()),
-      numRunningJobs: v.optional(v.number()),
-      action: v.optional(v.string()),
-      auditMetadata: v.optional(v.string()),
-      usage: v.optional(v.object({
-        databaseReadBytes: v.optional(v.number()),
-        databaseWriteBytes: v.optional(v.number()),
-        databaseReadDocuments: v.optional(v.number()),
-        fileStorageReadBytes: v.optional(v.number()),
-        fileStorageWriteBytes: v.optional(v.number()),
-        vectorStorageReadBytes: v.optional(v.number()),
-        vectorStorageWriteBytes: v.optional(v.number()),
-        actionMemoryUsedMb: v.optional(v.number()),
-      })),
-      occInfo: v.optional(v.any()),
-      schedulerInfo: v.optional(v.any()),
-    })),
+    metadata: v.optional(v.any()),
     rawData: v.optional(v.string()), // store original webhook payload
   })
     .index("by_app_and_timestamp", ["appId", "timestamp"])
