@@ -9,6 +9,12 @@ const applicationTables = {
     apiKey: v.string(), // unique API key for each app
     isActive: v.boolean(),
     createdBy: v.id("users"),
+    flags: v.optional(v.array(v.object({
+      pattern: v.string(), // e.g. "query interactions:list success"
+      name: v.string(),    // display name for the flag
+      isActive: v.boolean(),
+      createdAt: v.number(),
+    }))),
   })
     .index("by_api_key", ["apiKey"])
     .index("by_created_by", ["createdBy"]),

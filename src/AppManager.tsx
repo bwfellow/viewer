@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "../convex/_generated/api";
 import { toast } from "sonner";
+import { FlagManager } from "./FlagManager";
 import { Id } from "../convex/_generated/dataModel";
 
 export function AppManager() {
@@ -421,6 +422,17 @@ export function AppManager() {
                   <p className="text-xs text-gray-500 mt-1">
                     Or send the API key in the "x-api-key" header
                   </p>
+                </div>
+
+                {/* Function Flags */}
+                <div className="border-t pt-4 mt-4">
+                  <FlagManager
+                    appId={app._id}
+                    flags={app.flags || []}
+                    onUpdate={() => {
+                      // The useQuery hook will automatically refresh the data
+                    }}
+                  />
                 </div>
               </div>
             </div>

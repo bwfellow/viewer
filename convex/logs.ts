@@ -41,6 +41,26 @@ export const processWebhookLog = mutation({
           }
         }
       }
+
+      // Check if any events match the app's flags
+      if (app.flags?.length) {
+        for (const event of events) {
+          const logString = `${event.function?.type || ''} ${event.function?.path || ''} ${event.status || ''}`.toLowerCase().trim();
+          
+          for (const flag of app.flags) {
+            if (flag.isActive && logString.includes(flag.pattern.toLowerCase())) {
+              // Create a flagged copy of the event
+              const flaggedEvent = {
+                ...event,
+                topic: 'flagged',
+                flag: flag.name,
+                originalTopic: event.topic,
+              };
+              events.push(flaggedEvent);
+            }
+          }
+        }
+      }
       
       for (const event of events) {
         const processedLog = processConvexLogEvent(event, app._id);
