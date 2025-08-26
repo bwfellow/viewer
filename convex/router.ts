@@ -50,4 +50,55 @@ http.route({
   }),
 });
 
+// Add a GET handler for testing the webhook endpoint
+http.route({
+  path: "/webhook/logs",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    const url = new URL(request.url);
+    const apiKey = url.searchParams.get("api_key");
+    
+    if (!apiKey) {
+      return new Response(
+        JSON.stringify({ 
+          error: "API key required",
+          message: "Add ?api_key=your_api_key to the URL or use x-api-key header"
+        }),
+        {
+          status: 401,
+          headers: { "Content-Type": "application/json" },
+        }
+      );
+    }
+
+    // Verify the API key exists
+    const app = await ctx.runQuery(api.apps.getAppByApiKey, { apiKey });
+    if (!app) {
+      return new Response(
+        JSON.stringify({ 
+          error: "Invalid API key",
+          message: "The provided API key does not match any active app"
+        }),
+        {
+          status: 401,
+          headers: { "Content-Type": "application/json" },
+        }
+      );
+    }
+
+    return new Response(
+      JSON.stringify({ 
+        success: true,
+        message: "Webhook endpoint is working!",
+        app: { name: app.name, isActive: app.isActive },
+        instructions: "Send POST requests to this endpoint with log data in the body"
+      }),
+      {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }
+    );
+  }),
+});
+
 export default http;
