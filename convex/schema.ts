@@ -9,6 +9,8 @@ const applicationTables = {
     apiKey: v.string(), // unique API key for each app
     isActive: v.boolean(),
     createdBy: v.id("users"),
+    isDeleted: v.optional(v.boolean()),
+    deletedAt: v.optional(v.number()),
     flags: v.optional(v.array(v.object({
       pattern: v.string(), // e.g. "query interactions:list success"
       name: v.string(),    // display name for the flag

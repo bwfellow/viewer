@@ -11,12 +11,15 @@ export function AppManager() {
   const [newAppDescription, setNewAppDescription] = useState("");
   const [editingAppId, setEditingAppId] = useState<Id<"apps"> | null>(null);
   const [editingAppName, setEditingAppName] = useState("");
+  const [showDeletedApps, setShowDeletedApps] = useState(false);
   
-  const apps = useQuery(api.apps.getUserApps);
+  const apps = useQuery(api.apps.getUserApps, { includeDeleted: showDeletedApps });
   const webhookBaseUrl = useQuery(api.config.getWebhookUrl);
   const createApp = useMutation(api.apps.createApp);
   const updateApp = useMutation(api.apps.updateApp);
   const deleteApp = useMutation(api.apps.deleteApp);
+  const restoreApp = useMutation(api.apps.restoreApp);
+  const permanentlyDeleteApp = useMutation(api.apps.permanentlyDeleteApp);
   const regenerateApiKey = useMutation(api.apps.regenerateApiKey);
   
   const handleCreateApp = async (e: React.FormEvent) => {
@@ -48,15 +51,43 @@ export function AppManager() {
   };
   
   const handleDeleteApp = async (appId: Id<"apps">, appName: string) => {
-    if (!confirm(`Are you sure you want to delete "${appName}"? This will also delete all its logs.`)) {
+    if (!confirm(`Are you sure you want to delete "${appName}"? The app and its logs will be archived and can be restored later.`)) {
       return;
     }
     
     try {
       await deleteApp({ appId });
-      toast.success("App deleted successfully");
+      toast.success("App archived successfully");
     } catch (error) {
-      toast.error("Failed to delete app");
+      toast.error("Failed to archive app");
+    }
+  };
+
+  const handleRestoreApp = async (appId: Id<"apps">, appName: string) => {
+    try {
+      await restoreApp({ appId });
+      toast.success(`App "${appName}" restored successfully`);
+    } catch (error) {
+      toast.error("Failed to restore app");
+    }
+  };
+
+  const handlePermanentDelete = async (appId: Id<"apps">, appName: string) => {
+    const confirmPhrase = `delete-${appName}-permanently`;
+    const userPhrase = prompt(
+      `This will permanently delete "${appName}" and all its logs. This action cannot be undone.\n\nTo confirm, please type: ${confirmPhrase}`
+    );
+    
+    if (!userPhrase || userPhrase !== confirmPhrase) {
+      toast.error("Deletion cancelled - confirmation phrase did not match");
+      return;
+    }
+    
+    try {
+      await permanentlyDeleteApp({ appId, confirmationPhrase: confirmPhrase });
+      toast.success("App permanently deleted");
+    } catch (error) {
+      toast.error("Failed to delete app permanently");
     }
   };
   
@@ -213,12 +244,23 @@ export function AppManager() {
           <h2 className="text-2xl font-bold text-gray-900">Your Applications</h2>
           <p className="text-gray-600">Manage your apps and their API keys</p>
         </div>
-        <button
-          onClick={() => setShowCreateForm(true)}
-          className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
-        >
-          Add New App
-        </button>
+        <div className="flex gap-4 items-center">
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={showDeletedApps}
+              onChange={(e) => setShowDeletedApps(e.target.checked)}
+              className="rounded border-gray-300"
+            />
+            Show Deleted Apps
+          </label>
+          <button
+            onClick={() => setShowCreateForm(true)}
+            className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+          >
+            Add New App
+          </button>
+        </div>
       </div>
       
       {/* Create App Form */}
@@ -347,37 +389,63 @@ export function AppManager() {
                       </button>
                     </>
                   )}
-                  <span
-                    className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                      app.isActive
-                        ? "bg-green-100 text-green-800"
-                        : "bg-red-100 text-red-800"
-                    }`}
-                  >
-                    {app.isActive ? "Active" : "Inactive"}
-                  </span>
+                  <div className="flex gap-2">
+                    <span
+                      className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                        app.isActive
+                          ? "bg-green-100 text-green-800"
+                          : "bg-red-100 text-red-800"
+                      }`}
+                    >
+                      {app.isActive ? "Active" : "Inactive"}
+                    </span>
+                    {app.isDeleted && (
+                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                        Deleted
+                      </span>
+                    )}
+                  </div>
                 </div>
                   {app.description && (
                     <p className="text-gray-600 mb-3">{app.description}</p>
                   )}
                 </div>
                 <div className="flex gap-2">
-                  <button
-                    onClick={() => handleToggleApp(app._id, app.isActive)}
-                    className={`px-3 py-1 text-sm rounded-md transition-colors ${
-                      app.isActive
-                        ? "bg-red-100 text-red-700 hover:bg-red-200"
-                        : "bg-green-100 text-green-700 hover:bg-green-200"
-                    }`}
-                  >
-                    {app.isActive ? "Deactivate" : "Activate"}
-                  </button>
-                  <button
-                    onClick={() => handleDeleteApp(app._id, app.name)}
-                    className="px-3 py-1 text-sm bg-red-100 text-red-700 rounded-md hover:bg-red-200 transition-colors"
-                  >
-                    Delete
-                  </button>
+                  {app.isDeleted ? (
+                    <>
+                      <button
+                        onClick={() => handleRestoreApp(app._id, app.name)}
+                        className="px-3 py-1 text-sm bg-green-100 text-green-700 rounded-md hover:bg-green-200 transition-colors"
+                      >
+                        Restore
+                      </button>
+                      <button
+                        onClick={() => handlePermanentDelete(app._id, app.name)}
+                        className="px-3 py-1 text-sm bg-red-100 text-red-700 rounded-md hover:bg-red-200 transition-colors"
+                      >
+                        Delete Permanently
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <button
+                        onClick={() => handleToggleApp(app._id, app.isActive)}
+                        className={`px-3 py-1 text-sm rounded-md transition-colors ${
+                          app.isActive
+                            ? "bg-red-100 text-red-700 hover:bg-red-200"
+                            : "bg-green-100 text-green-700 hover:bg-green-200"
+                        }`}
+                      >
+                        {app.isActive ? "Deactivate" : "Activate"}
+                      </button>
+                      <button
+                        onClick={() => handleDeleteApp(app._id, app.name)}
+                        className="px-3 py-1 text-sm bg-red-100 text-red-700 rounded-md hover:bg-red-200 transition-colors"
+                      >
+                        Archive
+                      </button>
+                    </>
+                  )}
                 </div>
               </div>
               
