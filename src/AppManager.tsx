@@ -76,6 +76,41 @@ export function AppManager() {
     navigator.clipboard.writeText(apiKey);
     toast.success("API key copied to clipboard");
   };
+
+  const testWebhook = async (apiKey: string, appName: string) => {
+    try {
+      // Send a test log event to the webhook
+      const testLogData = {
+        topic: "verification",
+        timestamp: Date.now(),
+        message: `Test webhook from ${appName} at ${new Date().toISOString()}`,
+        convex: {
+          deployment_name: "test-deployment",
+          deployment_type: "dev",
+          project_name: appName,
+          project_slug: appName.toLowerCase().replace(/\s+/g, '-'),
+        }
+      };
+
+      const response = await fetch(`${window.location.origin}/webhook/logs?api_key=${apiKey}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(testLogData),
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        toast.success(`Webhook test successful! Check the Log Viewer for the test message.`);
+      } else {
+        const error = await response.json();
+        toast.error(`Webhook test failed: ${error.error || 'Unknown error'}`);
+      }
+    } catch (error) {
+      toast.error(`Webhook test failed: ${error instanceof Error ? error.message : 'Network error'}`);
+    }
+  };
   
   if (apps === undefined) {
     return (
@@ -223,6 +258,13 @@ export function AppManager() {
                     className="px-3 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 transition-colors text-sm"
                   >
                     Copy
+                  </button>
+                  <button
+                    onClick={() => testWebhook(app.apiKey, app.name)}
+                    className="px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors text-sm"
+                    disabled={!app.isActive}
+                  >
+                    Test
                   </button>
                 </div>
                 
