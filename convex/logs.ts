@@ -558,7 +558,7 @@ export const getStorageStats = query({
   args: {
     appId: v.optional(v.id("apps")),
   },
-  handler: async (ctx) => {
+  handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
     if (!userId) {
       throw new Error("Must be authenticated");
