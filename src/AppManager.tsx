@@ -10,6 +10,7 @@ export function AppManager() {
   const [newAppDescription, setNewAppDescription] = useState("");
   
   const apps = useQuery(api.apps.getUserApps);
+  const webhookBaseUrl = useQuery(api.config.getWebhookUrl);
   const createApp = useMutation(api.apps.createApp);
   const updateApp = useMutation(api.apps.updateApp);
   const deleteApp = useMutation(api.apps.deleteApp);
@@ -92,7 +93,15 @@ export function AppManager() {
         }
       };
 
-      const response = await fetch(`${window.location.origin}/webhook/logs?api_key=${apiKey}`, {
+      // Get the Convex deployment URL dynamically
+      if (!webhookBaseUrl) {
+        toast.error("Unable to determine webhook URL. Please try again.");
+        return;
+      }
+      
+      const webhookUrl = `${webhookBaseUrl}/webhook/logs?api_key=${apiKey}`;
+
+      const response = await fetch(webhookUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -104,15 +113,22 @@ export function AppManager() {
         const result = await response.json();
         toast.success(`Webhook test successful! Check the Log Viewer for the test message.`);
       } else {
-        const error = await response.json();
-        toast.error(`Webhook test failed: ${error.error || 'Unknown error'}`);
+        const errorText = await response.text();
+        let errorMessage;
+        try {
+          const errorJson = JSON.parse(errorText);
+          errorMessage = errorJson.error || 'Unknown error';
+        } catch {
+          errorMessage = `HTTP ${response.status}: ${errorText.slice(0, 100)}...`;
+        }
+        toast.error(`Webhook test failed: ${errorMessage}`);
       }
     } catch (error) {
       toast.error(`Webhook test failed: ${error instanceof Error ? error.message : 'Network error'}`);
     }
   };
   
-  if (apps === undefined) {
+  if (apps === undefined || webhookBaseUrl === undefined) {
     return (
       <div className="flex justify-center items-center h-64">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
@@ -274,7 +290,7 @@ export function AppManager() {
                     Webhook URL
                   </label>
                   <code className="block bg-blue-50 text-blue-800 p-2 rounded text-sm font-mono break-all">
-                    {window.location.origin}/webhook/logs?api_key={app.apiKey}
+                    {webhookBaseUrl}/webhook/logs?api_key={app.apiKey}
                   </code>
                   <p className="text-xs text-gray-500 mt-1">
                     Or send the API key in the "x-api-key" header
