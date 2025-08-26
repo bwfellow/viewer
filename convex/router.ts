@@ -22,7 +22,12 @@ http.route({
           JSON.stringify({ error: "API key required" }),
           {
             status: 401,
-            headers: { "Content-Type": "application/json" },
+            headers: { 
+              "Content-Type": "application/json",
+              "Access-Control-Allow-Origin": "*",
+              "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
+              "Access-Control-Allow-Headers": "Content-Type, x-api-key, Authorization",
+            },
           }
         );
       }
@@ -35,7 +40,12 @@ http.route({
       
       return new Response(JSON.stringify({ success: true }), {
         status: 200,
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+          "Content-Type": "application/json",
+          "Access-Control-Allow-Origin": "*",
+          "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
+          "Access-Control-Allow-Headers": "Content-Type, x-api-key, Authorization",
+        },
       });
     } catch (error) {
       console.error("Error processing webhook:", error);
@@ -43,7 +53,12 @@ http.route({
         JSON.stringify({ error: "Failed to process webhook: " + error }),
         {
           status: 500,
-          headers: { "Content-Type": "application/json" },
+          headers: { 
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type, x-api-key, Authorization",
+          },
         }
       );
     }
@@ -66,7 +81,12 @@ http.route({
         }),
         {
           status: 401,
-          headers: { "Content-Type": "application/json" },
+          headers: { 
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type, x-api-key, Authorization",
+          },
         }
       );
     }
@@ -81,7 +101,12 @@ http.route({
         }),
         {
           status: 401,
-          headers: { "Content-Type": "application/json" },
+          headers: { 
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type, x-api-key, Authorization",
+          },
         }
       );
     }
@@ -95,7 +120,12 @@ http.route({
       }),
       {
         status: 200,
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+          "Content-Type": "application/json",
+          "Access-Control-Allow-Origin": "*",
+          "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
+          "Access-Control-Allow-Headers": "Content-Type, x-api-key, Authorization",
+        },
       }
     );
   }),

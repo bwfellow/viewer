@@ -6,9 +6,9 @@ export const getWebhookUrl = query({
   args: {},
   returns: v.string(),
   handler: async (ctx, args) => {
-    // In Convex, we can determine the deployment URL from the environment
-    // This will return the correct .convex.site URL for the current deployment
-    const deploymentUrl = process.env.CONVEX_SITE_URL || "https://dutiful-dodo-553.convex.site";
-    return deploymentUrl;
+    // According to the Convex docs, HTTP actions are exposed at:
+    // https://<your deployment name>.convex.site
+    // We'll use the deployment name from the README which shows "dutiful-dodo-553"
+    return "https://dutiful-dodo-553.convex.site";
   },
 });
