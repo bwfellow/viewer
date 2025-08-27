@@ -340,25 +340,30 @@ export const clearLogs = mutation({
         await ctx.db.delete(summary._id);
       }
     } else {
-      // Clear all logs for user's apps
+      // Clear all logs for user's apps - use indexed queries instead of collect()
       const userApps = await ctx.db
         .query("apps")
         .withIndex("by_created_by", (q) => q.eq("createdBy", userId))
         .collect();
       
-      const appIds = userApps.map(app => app._id);
+      // Delete logs and summaries for each app individually using indexes
+      for (const app of userApps) {
+        const logs = await ctx.db
+          .query("logs")
+          .withIndex("by_app_and_timestamp", (q) => q.eq("appId", app._id))
+          .collect();
+        
+        const summaries = await ctx.db
+          .query("logs_summary")
+          .withIndex("by_app_and_timestamp", (q) => q.eq("appId", app._id))
+          .collect();
 
-      const allLogs = await ctx.db.query("logs").collect();
-      const userLogs = allLogs.filter(log => appIds.includes(log.appId));
-
-      const allSummaries = await ctx.db.query("logs_summary").collect();
-      const userSummaries = allSummaries.filter(summary => appIds.includes(summary.appId));
-
-      for (const log of userLogs) {
-        await ctx.db.delete(log._id);
-      }
-      for (const summary of userSummaries) {
-        await ctx.db.delete(summary._id);
+        for (const log of logs) {
+          await ctx.db.delete(log._id);
+        }
+        for (const summary of summaries) {
+          await ctx.db.delete(summary._id);
+        }
       }
     }
   },
@@ -422,28 +427,40 @@ export const cleanupOldLogsManual = mutation({
     
     const appIds = userApps.map(app => app._id);
 
-    // Get old logs for user's apps
-    const allLogs = await ctx.db.query("logs").collect();
-    const oldLogs = allLogs.filter(log => 
-      appIds.includes(log.appId) && log.timestamp < cutoffTime
-    ).slice(0, 100); // Limit to 100 at a time
+    // Get old logs using indexed queries instead of collect()
+    let deletedLogs = 0;
+    let deletedSummaries = 0;
+    
+    for (const app of userApps) {
+      // Use indexed query for each app
+      const oldLogsForApp = await ctx.db
+        .query("logs")
+        .withIndex("by_app_and_timestamp", (q) => 
+          q.eq("appId", app._id).lt("timestamp", cutoffTime)
+        )
+        .take(50); // Limit per app
 
-    const allSummaries = await ctx.db.query("logs_summary").collect();
-    const oldSummaries = allSummaries.filter(summary => 
-      appIds.includes(summary.appId) && summary.timestamp < cutoffTime
-    ).slice(0, 100); // Limit to 100 at a time
+      const oldSummariesForApp = await ctx.db
+        .query("logs_summary")
+        .withIndex("by_app_and_timestamp", (q) => 
+          q.eq("appId", app._id).lt("timestamp", cutoffTime)
+        )
+        .take(50); // Limit per app
 
-    // Delete old logs and summaries
-    for (const log of oldLogs) {
-      await ctx.db.delete(log._id);
-    }
-    for (const summary of oldSummaries) {
-      await ctx.db.delete(summary._id);
+      // Delete old logs and summaries for this app
+      for (const log of oldLogsForApp) {
+        await ctx.db.delete(log._id);
+        deletedLogs++;
+      }
+      for (const summary of oldSummariesForApp) {
+        await ctx.db.delete(summary._id);
+        deletedSummaries++;
+      }
     }
 
     return {
-      deletedCount: oldLogs.length + oldSummaries.length,
-      hasMore: oldLogs.length === 100 || oldSummaries.length === 100,
+      deletedCount: deletedLogs + deletedSummaries,
+      hasMore: deletedLogs === (userApps.length * 50) || deletedSummaries === (userApps.length * 50),
     };
   },
 });

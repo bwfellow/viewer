@@ -142,9 +142,9 @@ export const checkAlerts = internalMutation({
       const timeWindowMs = alert.condition.timeWindow * 60 * 1000;
       const startTime = now - timeWindowMs;
 
-      // Get logs for this app in the time window
+      // Get lightweight log summaries for this app in the time window
       const logs = await ctx.db
-        .query("logs")
+        .query("logs_summary")
         .withIndex("by_app_and_timestamp", (q) => 
           q.eq("appId", alert.appId).gte("timestamp", startTime)
         )
@@ -167,12 +167,17 @@ export const checkAlerts = internalMutation({
 
         case "function_duration":
           if (alert.condition.functionPattern) {
-            const functionLogs = logs.filter(log => 
-              log.source?.includes(alert.condition.functionPattern!) &&
-              log.metadata?.duration
-            );
-            const slowLogs = functionLogs.filter(log => 
-              log.metadata!.duration! >= alert.condition.threshold
+            // For duration alerts, we need to check full logs since summaries don't have duration
+            const fullLogs = await ctx.db
+              .query("logs")
+              .withIndex("by_app_and_timestamp", (q) => 
+                q.eq("appId", alert.appId).gte("timestamp", startTime)
+              )
+              .filter(q => q.eq(q.field("source"), alert.condition.functionPattern!))
+              .collect();
+            
+            const slowLogs = fullLogs.filter(log => 
+              log.metadata?.duration && log.metadata.duration >= alert.condition.threshold
             );
             shouldTrigger = slowLogs.length > 0;
           }
