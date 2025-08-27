@@ -51,6 +51,20 @@ export function OptimizedLogViewer() {
     minLevel,
   }) || [];
 
+  // Get cost-safe chart data using pre-aggregated metrics
+  const chartData = useQuery(api.metrics.getAppChartData, 
+    selectedApp ? {
+      appId: selectedApp,
+      hours: 24,
+      period: "hour"
+    } : "skip"
+  ) || [];
+
+  // Get overview chart data for all apps when no specific app selected
+  const overviewChartData = useQuery(api.metrics.getAllAppsChartData,
+    !selectedApp ? { hours: 24 } : "skip"
+  ) || [];
+
   // Get full log details only when user expands a log
   const expandedLog = useQuery(
     api.logs.getFullLog,
@@ -157,6 +171,107 @@ export function OptimizedLogViewer() {
           </div>
         </div>
       </div>
+
+      {/* Charts Section */}
+      {(selectedApp ? chartData.length > 0 : overviewChartData.length > 0) && (
+        <div className="bg-white rounded-lg shadow border">
+          <div className="p-4 border-b border-gray-200">
+            <h3 className="text-lg font-medium text-gray-900">
+              📈 24-Hour Activity Chart {selectedApp && `- ${apps.find(a => a._id === selectedApp)?.name}`}
+            </h3>
+            <p className="text-sm text-gray-500">
+              Pre-aggregated hourly metrics • Cost-optimized • Updates every hour
+            </p>
+          </div>
+          
+          <div className="p-4">
+            <div className="h-64">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={selectedApp ? chartData : overviewChartData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                  <XAxis 
+                    dataKey="hour"
+                    axisLine={false}
+                    tickLine={false}
+                    tick={{ fontSize: 12, fill: '#6b7280' }}
+                    interval="preserveStartEnd"
+                  />
+                  <YAxis 
+                    axisLine={false}
+                    tickLine={false}
+                    tick={{ fontSize: 12, fill: '#6b7280' }}
+                  />
+                  <Tooltip 
+                    content={({ active, payload, label }) => {
+                      if (active && payload && payload.length) {
+                        const data = payload[0].payload;
+                        return (
+                          <div className="bg-white p-3 border rounded shadow text-sm">
+                            <p className="font-medium">{data.label}</p>
+                            <div className="space-y-1 mt-2">
+                              <p><span className="w-3 h-3 bg-blue-500 inline-block rounded mr-2"></span>Total: {data.totalLogs}</p>
+                              <p><span className="w-3 h-3 bg-red-500 inline-block rounded mr-2"></span>Errors: {data.errorCount}</p>
+                              <p><span className="w-3 h-3 bg-yellow-500 inline-block rounded mr-2"></span>Warnings: {data.warnCount}</p>
+                              <p><span className="w-3 h-3 bg-green-500 inline-block rounded mr-2"></span>Info: {data.infoCount}</p>
+                              {data.flaggedCount > 0 && (
+                                <p><span className="w-3 h-3 bg-purple-500 inline-block rounded mr-2"></span>Flagged: {data.flaggedCount}</p>
+                              )}
+                              <p className="text-gray-600 text-xs mt-1">Avg: {data.avgLogsPerMinute}/min</p>
+                            </div>
+                          </div>
+                        );
+                      }
+                      return null;
+                    }}
+                  />
+                  <Line 
+                    type="monotone" 
+                    dataKey="totalLogs" 
+                    stroke="#3b82f6" 
+                    strokeWidth={2}
+                    dot={false}
+                    name="Total Logs"
+                  />
+                  <Line 
+                    type="monotone" 
+                    dataKey="errorCount" 
+                    stroke="#ef4444" 
+                    strokeWidth={2}
+                    dot={false}
+                    name="Errors"
+                  />
+                  <Line 
+                    type="monotone" 
+                    dataKey="warnCount" 
+                    stroke="#f59e0b" 
+                    strokeWidth={2}
+                    dot={false}
+                    name="Warnings"
+                  />
+                  <Line 
+                    type="monotone" 
+                    dataKey="infoCount" 
+                    stroke="#10b981" 
+                    strokeWidth={2}
+                    dot={false}
+                    name="Info"
+                  />
+                  {(selectedApp ? chartData : overviewChartData).some((d: any) => d.flaggedCount > 0) && (
+                    <Line 
+                      type="monotone" 
+                      dataKey="flaggedCount" 
+                      stroke="#8b5cf6" 
+                      strokeWidth={2}
+                      dot={false}
+                      name="Flagged"
+                    />
+                  )}
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Log List */}
       <div className="bg-white rounded-lg shadow border">
@@ -275,6 +390,7 @@ export function OptimizedLogViewer() {
           <li>• <strong>Small time windows:</strong> Default 5-15 minutes instead of "all logs"</li>
           <li>• <strong>Level filtering:</strong> WARN+ by default reduces volume by 80-90%</li>
           <li>• <strong>On-demand details:</strong> Full logs loaded only when clicked</li>
+          <li>• <strong>Pre-aggregated charts:</strong> Hourly metrics prevent expensive chart queries</li>
           <li>• <strong>Stable subscriptions:</strong> Single query per view, no parameter churn</li>
         </ul>
       </div>

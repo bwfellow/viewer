@@ -55,6 +55,22 @@ const applicationTables = {
     .index("by_level_num", ["levelNum"])
     .index("by_app_level_timestamp", ["appId", "levelNum", "timestamp"]),
 
+  // Pre-aggregated metrics for cost-safe charts
+  log_metrics: defineTable({
+    appId: v.id("apps"),
+    timestamp: v.number(), // Hour bucket start time
+    period: v.string(), // "hour" or "day"
+    totalLogs: v.number(),
+    errorCount: v.number(),
+    warnCount: v.number(),
+    infoCount: v.number(),
+    debugCount: v.number(),
+    flaggedCount: v.number(),
+    avgLogsPerMinute: v.number(),
+  })
+    .index("by_app_and_period", ["appId", "period", "timestamp"])
+    .index("by_timestamp", ["timestamp"]),
+
   alerts: defineTable({
     appId: v.id("apps"),
     name: v.string(),

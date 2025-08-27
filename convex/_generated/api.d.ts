@@ -20,6 +20,7 @@ import type * as config from "../config.js";
 import type * as crons from "../crons.js";
 import type * as http from "../http.js";
 import type * as logs from "../logs.js";
+import type * as metrics from "../metrics.js";
 import type * as router from "../router.js";
 
 /**
@@ -38,6 +39,7 @@ declare const fullApi: ApiFromModules<{
   crons: typeof crons;
   http: typeof http;
   logs: typeof logs;
+  metrics: typeof metrics;
   router: typeof router;
 }>;
 export declare const api: FilterApi<
