@@ -3,6 +3,17 @@ import { v } from "convex/values";
 import { paginationOptsValidator } from "convex/server";
 import { getAuthUserId } from "@convex-dev/auth/server";
 
+// Helper function to convert log level to number for efficient filtering
+function levelToNum(level: string): number {
+  switch (level.toLowerCase()) {
+    case 'debug': return 10;
+    case 'info': return 20;
+    case 'warn': return 30;
+    case 'error': return 40;
+    default: return 20;
+  }
+}
+
 // Process incoming webhook log data from Convex Log Streams
 export const processWebhookLog = mutation({
   args: {
@@ -18,10 +29,10 @@ export const processWebhookLog = mutation({
         .unique();
 
       if (!app || !app.isActive) {
-        throw new Error("Invalid API key or app is inactive");
+        throw new Error("Invalid or inactive API key");
       }
 
-      // Split by newlines and parse each line as a separate JSON object
+      // Parse NDJSON (Newline Delimited JSON)
       const logLines = args.logData.trim().split('\n');
       const events = [];
       
@@ -36,8 +47,7 @@ export const processWebhookLog = mutation({
             }
           } catch (error) {
             console.error('Failed to parse log line:', error);
-            console.error('Problematic line:', line);
-            // Continue processing other lines even if one fails
+            // Continue processing other lines
           }
         }
       }
@@ -65,7 +75,21 @@ export const processWebhookLog = mutation({
       for (const event of events) {
         const processedLog = processConvexLogEvent(event, app._id);
         if (processedLog) {
-          await ctx.db.insert("logs", processedLog);
+          // Insert the full log
+          const fullLogId = await ctx.db.insert("logs", processedLog);
+          
+          // Insert lightweight summary for reactive UI
+          await ctx.db.insert("logs_summary", {
+            appId: processedLog.appId,
+            timestamp: processedLog.timestamp,
+            level: processedLog.level,
+            levelNum: levelToNum(processedLog.level),
+            messageShort: processedLog.message.substring(0, 100),
+            source: processedLog.source,
+            requestId: processedLog.requestId || undefined,
+            fullLogId,
+            hasMetadata: !!processedLog.metadata,
+          });
         }
       }
     } catch (error) {
@@ -75,15 +99,31 @@ export const processWebhookLog = mutation({
   },
 });
 
-// Process different types of Convex log events
+// Helper function to process different types of Convex log events
 function processConvexLogEvent(event: any, appId: any) {
   const baseLog = {
     appId,
     timestamp: event.timestamp || Date.now(),
+    level: "info",
+    message: "",
     rawData: JSON.stringify(event),
   };
 
   switch (event.topic) {
+    case 'verification':
+      return {
+        ...baseLog,
+        level: "info",
+        message: event.message || "Webhook verification",
+        source: event.convex?.deployment_name,
+        requestId: undefined,
+        metadata: {
+          deploymentName: event.convex?.deployment_name,
+          deploymentType: event.convex?.deployment_type,
+          projectName: event.convex?.project_name,
+        },
+      };
+
     case 'console':
       return {
         ...baseLog,
@@ -97,61 +137,42 @@ function processConvexLogEvent(event: any, appId: any) {
           systemCode: event.system_code,
         },
       };
-    
+
     case 'function_execution':
       return {
         ...baseLog,
         level: event.status === 'success' ? 'info' : 'error',
-        message: event.error_message || 
-          `${event.function?.type || 'function'} ${event.function?.path || 'unknown'} ${event.status}`,
+        message: `Function ${event.function?.path} ${event.status}`,
         source: event.function?.path,
         requestId: event.function?.request_id,
         metadata: {
           ...event.function,
-          duration: event.execution_time_ms,
           status: event.status,
-          error: event.error_message,
-          mutationQueueLength: event.mutation_queue_length,
-          mutationRetryCount: event.mutation_retry_count,
+          cached: event.cached,
           usage: event.usage,
-          occInfo: event.occ_info,
-          schedulerInfo: event.scheduler_info,
+          executionTime: event.execution_time_ms,
         },
       };
 
-    case 'verification':
+    case 'flagged':
       return {
         ...baseLog,
-        level: 'info',
-        message: event.message || "Log stream verification",
-        source: 'system',
-        metadata: event,
-      };
-
-    case 'scheduler_stats':
-      return {
-        ...baseLog,
-        level: 'info',
-        message: `Scheduler stats: ${event.num_running_jobs} running jobs, ${event.lag_seconds}s lag`,
-        source: 'scheduler',
-        metadata: event,
-      };
-
-    case 'audit_log':
-      return {
-        ...baseLog,
-        level: 'info',
-        message: `Audit log: ${event.audit_log_action}`,
-        source: 'audit',
-        metadata: event,
+        level: 'warn',
+        message: `🚩 ${event.flag}: ${event.function?.path} ${event.status}`,
+        source: event.function?.path,
+        requestId: event.function?.request_id,
+        metadata: {
+          flag: event.flag,
+          originalTopic: event.originalTopic,
+          ...event.function,
+          status: event.status,
+        },
       };
 
     default:
-      // Handle custom or unknown event types
       return {
         ...baseLog,
-        level: event.level || event.log_level?.toLowerCase() || 'info',
-        message: event.message || event.msg || `Unknown event type: ${event.topic}`,
+        message: `${event.topic}: ${event.message || JSON.stringify(event)}`,
         source: event.source || event.function?.path || event.topic,
         requestId: event.request_id || event.requestId || event.function?.request_id,
         userId: event.user_id || event.userId,
@@ -160,324 +181,130 @@ function processConvexLogEvent(event: any, appId: any) {
   }
 }
 
-// Get paginated logs with optional filtering
-export const getLogs = query({
-  args: {
-    paginationOpts: paginationOptsValidator,
+// OPTIMIZED QUERIES FOR REDUCED BANDWIDTH
+
+// Lightweight tail query for live view - only last 5-15 minutes, WARN+ by default
+export const tail = query({
+  args: { 
     appId: v.optional(v.id("apps")),
-    level: v.optional(v.string()),
-    source: v.optional(v.string()),
+    since: v.number(), 
+    limit: v.optional(v.number()), 
+    minLevel: v.optional(v.string()) 
   },
-  handler: async (ctx, args) => {
+  handler: async (ctx, { appId, since, limit = 150, minLevel = "warn" }) => {
     const userId = await getAuthUserId(ctx);
     if (!userId) {
       throw new Error("Must be authenticated");
     }
 
-    // If appId is specified, verify user owns the app
-    if (args.appId) {
-      const app = await ctx.db.get(args.appId);
+    const minLevelNum = levelToNum(minLevel);
+    
+    // Get user's apps if no specific app provided
+    let appIds: string[] = [];
+    if (appId) {
+      // Verify user owns this app
+      const app = await ctx.db.get(appId);
       if (!app || app.createdBy !== userId) {
         throw new Error("App not found or access denied");
       }
-
-      // Query logs for specific app
-      if (args.level) {
-        return await ctx.db
-          .query("logs")
-          .withIndex("by_app_and_level", (q) => q.eq("appId", args.appId!).eq("level", args.level!))
-          .order("desc")
-          .paginate(args.paginationOpts);
-      } else if (args.source) {
-        return await ctx.db
-          .query("logs")
-          .withIndex("by_app_and_source", (q) => q.eq("appId", args.appId!).eq("source", args.source!))
-          .order("desc")
-          .paginate(args.paginationOpts);
-      } else {
-        return await ctx.db
-          .query("logs")
-          .withIndex("by_app_and_timestamp", (q) => q.eq("appId", args.appId!))
-          .order("desc")
-          .paginate(args.paginationOpts);
-      }
+      appIds = [appId];
     } else {
-      // Query logs for all user's apps
       const userApps = await ctx.db
         .query("apps")
         .withIndex("by_created_by", (q) => q.eq("createdBy", userId))
         .collect();
-      
-      const appIds = userApps.map(app => app._id);
-      
-      // Get logs from all user's apps
-      const allLogs = await ctx.db.query("logs").collect();
-      const userLogs = allLogs.filter(log => appIds.includes(log.appId));
-      
-      // Apply filters
-      let filteredLogs = userLogs;
-      if (args.level) {
-        filteredLogs = filteredLogs.filter(log => log.level === args.level);
-      }
-      if (args.source) {
-        filteredLogs = filteredLogs.filter(log => log.source === args.source);
-      }
-      
-      // Sort by timestamp desc
-      filteredLogs.sort((a, b) => b.timestamp - a.timestamp);
-      
-      // Manual pagination
-      const startIndex = 0; // For simplicity, starting from 0
-      const endIndex = Math.min(startIndex + args.paginationOpts.numItems, filteredLogs.length);
-      const page = filteredLogs.slice(startIndex, endIndex);
-      
-      return {
-        page,
-        isDone: endIndex >= filteredLogs.length,
-        continueCursor: endIndex < filteredLogs.length ? "more" : null,
-      };
+      appIds = userApps.map(app => app._id);
     }
+
+    // Use logs_summary for lightweight subscriptions
+    const summaries = await ctx.db
+      .query("logs_summary")
+      .withIndex("by_timestamp", (q) => q.gte("timestamp", since))
+      .filter((q) => 
+        q.and(
+          q.gte(q.field("levelNum"), minLevelNum),
+          appIds.length === 1 ? q.eq(q.field("appId"), appIds[0]) : q.or(...appIds.map(id => q.eq(q.field("appId"), id)))
+        )
+      )
+      .order("desc")
+      .take(limit);
+
+    return summaries;
   },
 });
 
-// Search logs with full-text search and advanced filtering
-export const searchLogs = query({
-  args: {
-    paginationOpts: paginationOptsValidator,
-    appId: v.optional(v.id("apps")),
-    searchTerm: v.optional(v.string()),
-    level: v.optional(v.string()),
-    source: v.optional(v.string()),
-    dateRange: v.optional(v.object({
-      start: v.number(),
-      end: v.number(),
-    })),
-    eventType: v.optional(v.string()),
-  },
+// Get full log details on demand (when user clicks)
+export const getFullLog = query({
+  args: { logId: v.id("logs") },
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
     if (!userId) {
       throw new Error("Must be authenticated");
     }
 
-    // Get user's apps
-    const userApps = await ctx.db
-      .query("apps")
-      .withIndex("by_created_by", (q) => q.eq("createdBy", userId))
-      .collect();
-    
-    const appIds = userApps.map(app => app._id);
-
-    // If specific app is requested, verify ownership
-    if (args.appId && !appIds.includes(args.appId)) {
-      throw new Error("App not found or access denied");
+    const log = await ctx.db.get(args.logId);
+    if (!log) {
+      return null;
     }
 
-    // Get all logs for user's apps
-    const allLogs = await ctx.db.query("logs").collect();
-    let filteredLogs = allLogs.filter(log => 
-      args.appId ? log.appId === args.appId : appIds.includes(log.appId)
-    );
-
-    // Apply filters
-    if (args.level) {
-      filteredLogs = filteredLogs.filter(log => log.level === args.level);
+    // Verify user owns the app this log belongs to
+    const app = await ctx.db.get(log.appId);
+    if (!app || app.createdBy !== userId) {
+      throw new Error("Access denied");
     }
 
-    if (args.source) {
-      filteredLogs = filteredLogs.filter(log => log.source === args.source);
-    }
-
-    if (args.eventType) {
-      filteredLogs = filteredLogs.filter(log => 
-        log.metadata?.eventType === args.eventType
-      );
-    }
-
-    if (args.dateRange) {
-      filteredLogs = filteredLogs.filter(log => 
-        log.timestamp >= args.dateRange!.start && 
-        log.timestamp <= args.dateRange!.end
-      );
-    }
-
-    // Apply search term (full-text search)
-    if (args.searchTerm) {
-      const searchLower = args.searchTerm.toLowerCase();
-      filteredLogs = filteredLogs.filter(log => 
-        log.message.toLowerCase().includes(searchLower) ||
-        log.source?.toLowerCase().includes(searchLower) ||
-        log.requestId?.toLowerCase().includes(searchLower) ||
-        log.metadata?.functionName?.toLowerCase().includes(searchLower) ||
-        log.metadata?.error?.toLowerCase().includes(searchLower) ||
-        log.rawData?.toLowerCase().includes(searchLower)
-      );
-    }
-
-    // Sort by timestamp desc
-    filteredLogs.sort((a, b) => b.timestamp - a.timestamp);
-
-    // Manual pagination
-    const startIndex = 0;
-    const endIndex = Math.min(startIndex + args.paginationOpts.numItems, filteredLogs.length);
-    const page = filteredLogs.slice(startIndex, endIndex);
-
-    return {
-      page,
-      isDone: endIndex >= filteredLogs.length,
-      continueCursor: endIndex < filteredLogs.length ? "more" : null,
-      totalResults: filteredLogs.length,
-    };
+    return log;
   },
 });
 
-// Get unique sources for filtering
-export const getLogSources = query({
-  args: {
+// Paginated historical logs using summaries
+export const pageLogsBefore = query({
+  args: { 
     appId: v.optional(v.id("apps")),
+    before: v.number(), 
+    cursor: v.optional(v.string()), 
+    pageSize: v.optional(v.number()),
+    minLevel: v.optional(v.string())
   },
-  handler: async (ctx, args) => {
+  handler: async (ctx, { appId, before, cursor, pageSize = 100, minLevel = "info" }) => {
     const userId = await getAuthUserId(ctx);
     if (!userId) {
       throw new Error("Must be authenticated");
     }
 
-    // Get user's apps
-    const userApps = await ctx.db
-      .query("apps")
-      .withIndex("by_created_by", (q) => q.eq("createdBy", userId))
-      .collect();
-    
-    const appIds = userApps.map(app => app._id);
+    const minLevelNum = levelToNum(minLevel);
 
-    // If specific app is requested, verify ownership
-    if (args.appId && !appIds.includes(args.appId)) {
-      throw new Error("App not found or access denied");
-    }
-
-    // Get all logs for user's apps
-    const allLogs = await ctx.db.query("logs").collect();
-    const filteredLogs = allLogs.filter(log => 
-      args.appId ? log.appId === args.appId : appIds.includes(log.appId)
-    );
-
-    // Extract unique sources
-    const sources = new Set<string>();
-    filteredLogs.forEach(log => {
-      if (log.source) {
-        sources.add(log.source);
-      }
-    });
-
-    return Array.from(sources).sort();
-  },
-});
-
-// Get unique event types for filtering
-export const getEventTypes = query({
-  args: {
-    appId: v.optional(v.id("apps")),
-  },
-  handler: async (ctx, args) => {
-    const userId = await getAuthUserId(ctx);
-    if (!userId) {
-      throw new Error("Must be authenticated");
-    }
-
-    // Get user's apps
-    const userApps = await ctx.db
-      .query("apps")
-      .withIndex("by_created_by", (q) => q.eq("createdBy", userId))
-      .collect();
-    
-    const appIds = userApps.map(app => app._id);
-
-    // If specific app is requested, verify ownership
-    if (args.appId && !appIds.includes(args.appId)) {
-      throw new Error("App not found or access denied");
-    }
-
-    // Get all logs for user's apps
-    const allLogs = await ctx.db.query("logs").collect();
-    const filteredLogs = allLogs.filter(log => 
-      args.appId ? log.appId === args.appId : appIds.includes(log.appId)
-    );
-
-    // Extract unique event types
-    const eventTypes = new Set<string>();
-    filteredLogs.forEach(log => {
-      if (log.metadata?.eventType) {
-        eventTypes.add(log.metadata.eventType);
-      }
-    });
-
-    return Array.from(eventTypes).sort();
-  },
-});
-
-// Get log statistics for an app or all apps
-export const getLogStats = query({
-  args: {
-    appId: v.optional(v.id("apps")),
-  },
-  handler: async (ctx, args) => {
-    const userId = await getAuthUserId(ctx);
-    if (!userId) {
-      throw new Error("Must be authenticated");
-    }
-
-    let logs;
-    
-    if (args.appId) {
-      // Verify user owns the app
-      const app = await ctx.db.get(args.appId);
+    // Get user's apps if no specific app provided
+    let appIds: string[] = [];
+    if (appId) {
+      const app = await ctx.db.get(appId);
       if (!app || app.createdBy !== userId) {
         throw new Error("App not found or access denied");
       }
-      
-      logs = await ctx.db
-        .query("logs")
-        .withIndex("by_app_and_timestamp", (q) => q.eq("appId", args.appId!))
-        .collect();
+      appIds = [appId];
     } else {
-      // Get stats for all user's apps
       const userApps = await ctx.db
         .query("apps")
         .withIndex("by_created_by", (q) => q.eq("createdBy", userId))
         .collect();
-      
-      const appIds = userApps.map(app => app._id);
-      const allLogs = await ctx.db.query("logs").collect();
-      logs = allLogs.filter(log => appIds.includes(log.appId));
+      appIds = userApps.map(app => app._id);
     }
-    
-    const stats = {
-      total: logs.length,
-      byLevel: {} as Record<string, number>,
-      recentCount: 0,
-      byApp: {} as Record<string, number>,
-    };
-    
-    const oneHourAgo = Date.now() - 60 * 60 * 1000;
-    
-    for (const log of logs) {
-      // Count by level
-      stats.byLevel[log.level] = (stats.byLevel[log.level] || 0) + 1;
-      
-      // Count by app
-      stats.byApp[log.appId] = (stats.byApp[log.appId] || 0) + 1;
-      
-      // Count recent logs (last hour)
-      if (log.timestamp > oneHourAgo) {
-        stats.recentCount++;
-      }
-    }
-    
-    return stats;
+
+    return await ctx.db
+      .query("logs_summary")
+      .withIndex("by_timestamp", (q) => q.lt("timestamp", before))
+      .filter((q) => 
+        q.and(
+          q.gte(q.field("levelNum"), minLevelNum),
+          appIds.length === 1 ? q.eq(q.field("appId"), appIds[0]) : q.or(...appIds.map(id => q.eq(q.field("appId"), id)))
+        )
+      )
+      .order("desc")
+      .paginate({ cursor: cursor || null, numItems: pageSize });
   },
 });
 
-// Clear logs for an app
+// Clear logs for an app (or all apps if no appId provided)
 export const clearLogs = mutation({
   args: {
     appId: v.optional(v.id("apps")),
@@ -494,149 +321,82 @@ export const clearLogs = mutation({
       if (!app || app.createdBy !== userId) {
         throw new Error("App not found or access denied");
       }
-      
+
+      // Delete all logs for this app
       const logs = await ctx.db
         .query("logs")
         .withIndex("by_app_and_timestamp", (q) => q.eq("appId", args.appId!))
         .collect();
       
+      const summaries = await ctx.db
+        .query("logs_summary")
+        .withIndex("by_app_and_timestamp", (q) => q.eq("appId", args.appId!))
+        .collect();
+
       for (const log of logs) {
         await ctx.db.delete(log._id);
       }
+      for (const summary of summaries) {
+        await ctx.db.delete(summary._id);
+      }
     } else {
-      // Clear logs for all user's apps
+      // Clear all logs for user's apps
       const userApps = await ctx.db
         .query("apps")
         .withIndex("by_created_by", (q) => q.eq("createdBy", userId))
         .collect();
       
-      for (const app of userApps) {
-        const logs = await ctx.db
-          .query("logs")
-          .withIndex("by_app_and_timestamp", (q) => q.eq("appId", app._id))
-          .collect();
-        
-        for (const log of logs) {
-          await ctx.db.delete(log._id);
-        }
+      const appIds = userApps.map(app => app._id);
+
+      const allLogs = await ctx.db.query("logs").collect();
+      const userLogs = allLogs.filter(log => appIds.includes(log.appId));
+
+      const allSummaries = await ctx.db.query("logs_summary").collect();
+      const userSummaries = allSummaries.filter(summary => appIds.includes(summary.appId));
+
+      for (const log of userLogs) {
+        await ctx.db.delete(log._id);
+      }
+      for (const summary of userSummaries) {
+        await ctx.db.delete(summary._id);
       }
     }
   },
 });
 
-// Automatic log retention and cleanup
+// Internal cleanup function for old logs
 export const cleanupOldLogs = internalMutation({
   args: {
     retentionDays: v.optional(v.number()), // Default 30 days
-    batchSize: v.optional(v.number()), // Default 100 logs per batch
   },
   handler: async (ctx, args) => {
     const retentionDays = args.retentionDays || 30;
-    const batchSize = args.batchSize || 100;
     const cutoffTime = Date.now() - (retentionDays * 24 * 60 * 60 * 1000);
 
-    // Get old logs
+    // Get old logs (limit to 100 at a time for performance)
     const oldLogs = await ctx.db
       .query("logs")
       .withIndex("by_timestamp", (q) => q.lt("timestamp", cutoffTime))
-      .take(batchSize);
+      .take(100);
 
-    // Delete old logs
+    const oldSummaries = await ctx.db
+      .query("logs_summary")
+      .withIndex("by_timestamp", (q) => q.lt("timestamp", cutoffTime))
+      .take(100);
+
+    // Delete old logs and summaries
     for (const log of oldLogs) {
       await ctx.db.delete(log._id);
     }
+    for (const summary of oldSummaries) {
+      await ctx.db.delete(summary._id);
+    }
 
     return {
-      deletedCount: oldLogs.length,
-      hasMore: oldLogs.length === batchSize,
+      deletedLogs: oldLogs.length,
+      deletedSummaries: oldSummaries.length,
+      hasMore: oldLogs.length === 100 || oldSummaries.length === 100,
     };
-  },
-});
-
-// Get storage usage statistics
-export const getStorageStats = query({
-  args: {
-    appId: v.optional(v.id("apps")),
-  },
-  handler: async (ctx, args) => {
-    const userId = await getAuthUserId(ctx);
-    if (!userId) {
-      throw new Error("Must be authenticated");
-    }
-
-    // Get user's apps
-    const userApps = await ctx.db
-      .query("apps")
-      .withIndex("by_created_by", (q) => q.eq("createdBy", userId))
-      .collect();
-    
-    const appIds = userApps.map(app => app._id);
-
-    // Get logs for the app or all user's apps
-    const allLogs = await ctx.db.query("logs").collect();
-    const userLogs = allLogs.filter(log => 
-      args.appId ? log.appId === args.appId : appIds.includes(log.appId)
-    );
-
-    // Calculate storage usage
-    let totalSize = 0;
-    const now = Date.now();
-    const periods = {
-      last24h: now - (24 * 60 * 60 * 1000),
-      last7d: now - (7 * 24 * 60 * 60 * 1000),
-      last30d: now - (30 * 24 * 60 * 60 * 1000),
-    };
-
-    const stats = {
-      totalLogs: userLogs.length,
-      totalSizeBytes: 0,
-      logsByPeriod: {
-        last24h: 0,
-        last7d: 0,
-        last30d: 0,
-        older: 0,
-      },
-      sizeByPeriod: {
-        last24h: 0,
-        last7d: 0,
-        last30d: 0,
-        older: 0,
-      },
-      oldestLogTimestamp: null as number | null,
-      newestLogTimestamp: null as number | null,
-    };
-
-    for (const log of userLogs) {
-      const logSize = JSON.stringify(log).length;
-      totalSize += logSize;
-
-      // Update oldest/newest timestamps
-      if (!stats.oldestLogTimestamp || log.timestamp < stats.oldestLogTimestamp) {
-        stats.oldestLogTimestamp = log.timestamp;
-      }
-      if (!stats.newestLogTimestamp || log.timestamp > stats.newestLogTimestamp) {
-        stats.newestLogTimestamp = log.timestamp;
-      }
-
-      // Categorize by time period
-      if (log.timestamp > periods.last24h) {
-        stats.logsByPeriod.last24h++;
-        stats.sizeByPeriod.last24h += logSize;
-      } else if (log.timestamp > periods.last7d) {
-        stats.logsByPeriod.last7d++;
-        stats.sizeByPeriod.last7d += logSize;
-      } else if (log.timestamp > periods.last30d) {
-        stats.logsByPeriod.last30d++;
-        stats.sizeByPeriod.last30d += logSize;
-      } else {
-        stats.logsByPeriod.older++;
-        stats.sizeByPeriod.older += logSize;
-      }
-    }
-
-    stats.totalSizeBytes = totalSize;
-
-    return stats;
   },
 });
 
@@ -668,79 +428,22 @@ export const cleanupOldLogsManual = mutation({
       appIds.includes(log.appId) && log.timestamp < cutoffTime
     ).slice(0, 100); // Limit to 100 at a time
 
-    // Delete old logs
+    const allSummaries = await ctx.db.query("logs_summary").collect();
+    const oldSummaries = allSummaries.filter(summary => 
+      appIds.includes(summary.appId) && summary.timestamp < cutoffTime
+    ).slice(0, 100); // Limit to 100 at a time
+
+    // Delete old logs and summaries
     for (const log of oldLogs) {
       await ctx.db.delete(log._id);
     }
+    for (const summary of oldSummaries) {
+      await ctx.db.delete(summary._id);
+    }
 
     return {
-      deletedCount: oldLogs.length,
-      hasMore: oldLogs.length === 100,
+      deletedCount: oldLogs.length + oldSummaries.length,
+      hasMore: oldLogs.length === 100 || oldSummaries.length === 100,
     };
-  },
-});
-
-// Get hourly log counts for charting
-export const getHourlyLogCounts = query({
-  args: {
-    appId: v.optional(v.id("apps")),
-    hours: v.optional(v.number()), // Default to 24 hours
-  },
-  handler: async (ctx, args) => {
-    const userId = await getAuthUserId(ctx);
-    if (!userId) {
-      throw new Error("Must be authenticated");
-    }
-
-    const hours = args.hours || 24;
-    const now = Date.now();
-    const startTime = now - (hours * 60 * 60 * 1000);
-
-    // Get user's apps
-    const userApps = await ctx.db
-      .query("apps")
-      .withIndex("by_created_by", (q) => q.eq("createdBy", userId))
-      .collect();
-    
-    const appIds = userApps.map(app => app._id);
-
-    // Get logs for the time period
-    const allLogs = await ctx.db.query("logs").collect();
-    const userLogs = allLogs.filter(log => 
-      log.timestamp >= startTime && 
-      (args.appId ? log.appId === args.appId : appIds.includes(log.appId))
-    );
-
-    // Group logs by hour
-    const hourlyData: Record<string, number> = {};
-    
-    // Initialize all hours in the range
-    for (let i = 0; i < hours; i++) {
-      const hourTimestamp = Math.floor((now - (i * 60 * 60 * 1000)) / (60 * 60 * 1000)) * (60 * 60 * 1000);
-      const hourKey = new Date(hourTimestamp).toISOString().slice(0, 13) + ":00:00.000Z";
-      hourlyData[hourKey] = 0;
-    }
-
-    // Count logs for each hour
-    for (const log of userLogs) {
-      const hourTimestamp = Math.floor(log.timestamp / (60 * 60 * 1000)) * (60 * 60 * 1000);
-      const hourKey = new Date(hourTimestamp).toISOString().slice(0, 13) + ":00:00.000Z";
-      hourlyData[hourKey] = (hourlyData[hourKey] || 0) + 1;
-    }
-
-    // Convert to sorted array
-    const sortedData = Object.entries(hourlyData)
-      .map(([timestamp, count]) => ({
-        timestamp: new Date(timestamp).getTime(),
-        count,
-        hour: new Date(timestamp).getHours(),
-        label: new Date(timestamp).toLocaleTimeString('en-US', { 
-          hour: 'numeric', 
-          hour12: true 
-        })
-      }))
-      .sort((a, b) => a.timestamp - b.timestamp);
-
-    return sortedData;
   },
 });

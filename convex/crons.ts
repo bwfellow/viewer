@@ -15,7 +15,7 @@ crons.daily(
   "cleanup old logs",
   { hourUTC: 2, minuteUTC: 0 },
   internal.logs.cleanupOldLogs,
-  { retentionDays: 30, batchSize: 1000 }
+  { retentionDays: 30 }
 );
 
 export default crons;

@@ -3,7 +3,7 @@ import { api } from "../convex/_generated/api";
 import { SignInForm } from "./SignInForm";
 import { SignOutButton } from "./SignOutButton";
 import { Toaster } from "sonner";
-import { LogViewer } from "./LogViewer";
+import { OptimizedLogViewer } from "./OptimizedLogViewer";
 import { AppManager } from "./AppManager";
 import { AlertManager } from "./AlertManager";
 import { SetupGuide } from "./SetupGuide";
@@ -63,7 +63,7 @@ function Content({ activeTab, setActiveTab }: {
                   : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
               }`}
             >
-              Log Viewer
+              🚀 Log Viewer
             </button>
             <button
               onClick={() => setActiveTab("apps")}
@@ -99,7 +99,7 @@ function Content({ activeTab, setActiveTab }: {
         </div>
 
         {/* Tab Content */}
-        {activeTab === "logs" && <LogViewer />}
+        {activeTab === "logs" && <OptimizedLogViewer />}
         {activeTab === "apps" && <AppManager />}
         {activeTab === "alerts" && <AlertManager />}
         {activeTab === "setup" && <SetupGuide />}

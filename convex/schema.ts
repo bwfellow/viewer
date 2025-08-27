@@ -38,6 +38,23 @@ const applicationTables = {
     .index("by_timestamp", ["timestamp"])
     .index("by_level", ["level"]),
 
+  // Lightweight summary table for reactive UI subscriptions
+  logs_summary: defineTable({
+    appId: v.id("apps"),
+    timestamp: v.number(),
+    level: v.string(),
+    levelNum: v.number(), // DEBUG=10, INFO=20, WARN=30, ERROR=40
+    messageShort: v.string(), // First 100 chars
+    source: v.optional(v.string()),
+    requestId: v.optional(v.string()),
+    fullLogId: v.id("logs"), // Reference to full log
+    hasMetadata: v.boolean(),
+  })
+    .index("by_app_and_timestamp", ["appId", "timestamp"])
+    .index("by_timestamp", ["timestamp"])
+    .index("by_level_num", ["levelNum"])
+    .index("by_app_level_timestamp", ["appId", "levelNum", "timestamp"]),
+
   alerts: defineTable({
     appId: v.id("apps"),
     name: v.string(),
