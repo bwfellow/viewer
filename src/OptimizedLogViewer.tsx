@@ -53,8 +53,8 @@ export function OptimizedLogViewer() {
 
   // Get full log details only when user expands a log
   const expandedLog = useQuery(
-    expandedLogId ? api.logs.getFullLog : "skip",
-    expandedLogId ? { logId: expandedLogId } : {}
+    expandedLogId ? api.logs.getFullLog : undefined,
+    expandedLogId ? { logId: expandedLogId } : "skip"
   );
 
   // Auto-refresh the tail window every 30 seconds
