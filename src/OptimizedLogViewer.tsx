@@ -53,7 +53,7 @@ export function OptimizedLogViewer() {
 
   // Get full log details only when user expands a log
   const expandedLog = useQuery(
-    expandedLogId ? api.logs.getFullLog : undefined,
+    api.logs.getFullLog,
     expandedLogId ? { logId: expandedLogId } : "skip"
   );
 
