@@ -12,7 +12,8 @@ export const createAlert = mutation({
         v.literal("error_rate"),
         v.literal("error_count"),
         v.literal("function_duration"),
-        v.literal("no_logs")
+        v.literal("no_logs"),
+        v.literal("flag_triggered")
       ),
       threshold: v.number(),
       timeWindow: v.number(), // minutes
@@ -185,6 +186,12 @@ export const checkAlerts = internalMutation({
 
         case "no_logs":
           shouldTrigger = logs.length === 0;
+          break;
+
+        case "flag_triggered":
+          // Count flagged logs (those with 🚩 in the message)
+          const flaggedLogs = logs.filter(log => log.messageShort.includes("🚩"));
+          shouldTrigger = flaggedLogs.length >= alert.condition.threshold;
           break;
       }
 

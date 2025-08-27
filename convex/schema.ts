@@ -79,7 +79,8 @@ const applicationTables = {
         v.literal("error_rate"),
         v.literal("error_count"),
         v.literal("function_duration"),
-        v.literal("no_logs")
+        v.literal("no_logs"),
+        v.literal("flag_triggered")
       ),
       threshold: v.number(),
       timeWindow: v.number(), // minutes

@@ -9,7 +9,7 @@ export function AlertManager() {
   const [selectedApp, setSelectedApp] = useState<Id<"apps"> | "">("");
   const [newAlert, setNewAlert] = useState({
     name: "",
-    type: "error_count" as "error_count" | "error_rate" | "function_duration" | "no_logs",
+    type: "error_count" as "error_count" | "error_rate" | "function_duration" | "no_logs" | "flag_triggered",
     threshold: 5,
     timeWindow: 15,
     functionPattern: "",
@@ -90,6 +90,8 @@ export function AlertManager() {
         return "Triggers when function duration exceeds threshold (ms)";
       case "no_logs":
         return "Triggers when no logs received in time window";
+      case "flag_triggered":
+        return "Triggers when flagged events occur (🚩)";
       default:
         return "Unknown alert type";
     }
@@ -203,6 +205,7 @@ export function AlertManager() {
                   <option value="error_rate">Error Rate (%)</option>
                   <option value="function_duration">Function Duration (ms)</option>
                   <option value="no_logs">No Logs</option>
+                  <option value="flag_triggered">Flag Triggered 🚩</option>
                 </select>
                 <p className="text-xs text-gray-500 mt-1">
                   {getAlertTypeDescription(newAlert.type)}
