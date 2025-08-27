@@ -14,6 +14,28 @@ function levelToNum(level: string): number {
   }
 }
 
+// Helper function to process and insert a single event (memory efficient)
+async function processAndInsertEvent(ctx: any, event: any, app: any) {
+  const processedLog = processConvexLogEvent(event, app._id);
+  if (processedLog) {
+    // Insert the full log
+    const fullLogId = await ctx.db.insert("logs", processedLog);
+    
+    // Insert lightweight summary for reactive UI
+    await ctx.db.insert("logs_summary", {
+      appId: processedLog.appId,
+      timestamp: processedLog.timestamp,
+      level: processedLog.level,
+      levelNum: levelToNum(processedLog.level),
+      messageShort: processedLog.message.substring(0, 100),
+      source: processedLog.source,
+      requestId: processedLog.requestId || undefined,
+      fullLogId,
+      hasMetadata: !!processedLog.metadata,
+    });
+  }
+}
+
 // Process incoming webhook log data from Convex Log Streams
 export const processWebhookLog = mutation({
   args: {
@@ -32,66 +54,65 @@ export const processWebhookLog = mutation({
         throw new Error("Invalid or inactive API key");
       }
 
-      // Parse NDJSON (Newline Delimited JSON)
+      // Parse NDJSON (Newline Delimited JSON) - MEMORY SAFE
       const logLines = args.logData.trim().split('\n');
-      const events = [];
+      
+      // Limit processing to prevent memory overflow
+      const MAX_EVENTS_PER_BATCH = 100; // Prevent memory issues
+      let processedCount = 0;
+      let skippedCount = 0;
+      
+      console.log(`Processing webhook with ${logLines.length} lines`);
       
       for (const line of logLines) {
-        if (line.trim()) {
-          try {
-            const logEntry = JSON.parse(line);
-            if (Array.isArray(logEntry)) {
-              events.push(...logEntry);
-            } else {
-              events.push(logEntry);
-            }
-          } catch (error) {
-            console.error('Failed to parse log line:', error);
-            // Continue processing other lines
-          }
+        if (!line.trim()) continue;
+        
+        // Memory safety: Stop if we've processed too many events
+        if (processedCount >= MAX_EVENTS_PER_BATCH) {
+          skippedCount++;
+          continue;
         }
-      }
-
-      // Check if any events match the app's flags
-      if (app.flags?.length) {
-        for (const event of events) {
-          const logString = `${event.function?.type || ''} ${event.function?.path || ''} ${event.status || ''}`.toLowerCase().trim();
+        
+        try {
+          const logEntry = JSON.parse(line);
+          const events = Array.isArray(logEntry) ? logEntry : [logEntry];
           
-          for (const flag of app.flags) {
-            if (flag.isActive && logString.includes(flag.pattern.toLowerCase())) {
-              // Create a flagged copy of the event
-              const flaggedEvent = {
-                ...event,
-                topic: 'flagged',
-                flag: flag.name,
-                originalTopic: event.topic,
-              };
-              events.push(flaggedEvent);
+          for (const event of events) {
+            if (processedCount >= MAX_EVENTS_PER_BATCH) {
+              skippedCount++;
+              continue;
+            }
+            
+            // Process the original event
+            await processAndInsertEvent(ctx, event, app);
+            processedCount++;
+            
+            // Check for flags and create flagged events
+            if (app.flags?.length) {
+              const logString = `${event.function?.type || ''} ${event.function?.path || ''} ${event.status || ''}`.toLowerCase().trim();
+              
+              for (const flag of app.flags) {
+                if (flag.isActive && logString.includes(flag.pattern.toLowerCase())) {
+                  // Create and process flagged event
+                  const flaggedEvent = {
+                    ...event,
+                    topic: 'flagged',
+                    flag: flag.name,
+                    originalTopic: event.topic,
+                  };
+                  await processAndInsertEvent(ctx, flaggedEvent, app);
+                  processedCount++;
+                }
+              }
             }
           }
+        } catch (error) {
+          console.error('Failed to parse log line:', error);
+          // Continue processing other lines
         }
       }
       
-      for (const event of events) {
-        const processedLog = processConvexLogEvent(event, app._id);
-        if (processedLog) {
-          // Insert the full log
-          const fullLogId = await ctx.db.insert("logs", processedLog);
-          
-          // Insert lightweight summary for reactive UI
-          await ctx.db.insert("logs_summary", {
-            appId: processedLog.appId,
-            timestamp: processedLog.timestamp,
-            level: processedLog.level,
-            levelNum: levelToNum(processedLog.level),
-            messageShort: processedLog.message.substring(0, 100),
-            source: processedLog.source,
-            requestId: processedLog.requestId || undefined,
-            fullLogId,
-            hasMetadata: !!processedLog.metadata,
-          });
-        }
-      }
+      console.log(`Processed ${processedCount} events, skipped ${skippedCount} due to batch limit`);
     } catch (error) {
       console.error("Failed to process log entry:", error);
       throw new Error("Failed to process log entry: " + error);
