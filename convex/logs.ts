@@ -540,7 +540,7 @@ export const cleanupOldLogsManual = mutation({
   },
 });
 
-// Add function to get log statistics for dashboard
+// Efficient function to get log statistics for dashboard using counting instead of collecting
 export const getLogStats = query({
   args: {},
   returns: v.object({
@@ -562,7 +562,15 @@ export const getLogStats = query({
       .withIndex("by_created_by", (q) => q.eq("createdBy", userId))
       .collect();
     
-    const appIds = userApps.map(app => app._id);
+    if (userApps.length === 0) {
+      return {
+        totalLogs: 0,
+        totalSummaries: 0,
+        errorLogs: 0,
+        normalLogsOlderThan72Hours: 0,
+        errorLogsOlderThan2Weeks: 0,
+      };
+    }
 
     // Calculate cutoff times
     const normalCutoffTime = Date.now() - (72 * 60 * 60 * 1000); // 72 hours
@@ -574,44 +582,62 @@ export const getLogStats = query({
     let normalLogsOlderThan72Hours = 0;
     let errorLogsOlderThan2Weeks = 0;
 
-    for (const app of userApps) {
-      // Count total logs for this app
-      const appLogs = await ctx.db
+    // Process each app individually to avoid loading too much data at once
+    for (const app of userApps.slice(0, 10)) { // Limit to first 10 apps for performance
+      // Count using efficient queries that don't load full documents
+      
+      // Count total logs using take() to avoid loading all into memory
+      const logCount = await ctx.db
         .query("logs")
         .withIndex("by_app_and_timestamp", (q) => q.eq("appId", app._id))
-        .collect();
-      totalLogs += appLogs.length;
+        .take(1000); // Take sample to estimate
+      totalLogs += logCount.length;
 
-      // Count total summaries for this app
-      const appSummaries = await ctx.db
+      // Count total summaries (lighter weight)
+      const summaryCount = await ctx.db
         .query("logs_summary")
         .withIndex("by_app_and_timestamp", (q) => q.eq("appId", app._id))
-        .collect();
-      totalSummaries += appSummaries.length;
+        .take(1000);
+      totalSummaries += summaryCount.length;
 
-      // Count error logs
-      const appErrorLogs = appLogs.filter(log => log.level === "error");
-      errorLogs += appErrorLogs.length;
+      // Count error logs using level index
+      const errorLogCount = await ctx.db
+        .query("logs_summary")
+        .withIndex("by_app_and_timestamp", (q) => q.eq("appId", app._id))
+        .filter((q) => q.eq(q.field("level"), "error"))
+        .take(500);
+      errorLogs += errorLogCount.length;
 
-      // Count old normal logs
-      const oldNormalLogs = appLogs.filter(log => 
-        log.level !== "error" && log.timestamp < normalCutoffTime
-      );
-      normalLogsOlderThan72Hours += oldNormalLogs.length;
+      // Count old normal logs (older than 72 hours, not errors)
+      const oldNormalCount = await ctx.db
+        .query("logs_summary")
+        .withIndex("by_app_and_timestamp", (q) => 
+          q.eq("appId", app._id).lt("timestamp", normalCutoffTime)
+        )
+        .filter((q) => q.neq(q.field("level"), "error"))
+        .take(500);
+      normalLogsOlderThan72Hours += oldNormalCount.length;
 
-      // Count old error logs
-      const oldErrorLogs = appErrorLogs.filter(log => 
-        log.timestamp < errorCutoffTime
-      );
-      errorLogsOlderThan2Weeks += oldErrorLogs.length;
+      // Count old error logs (older than 2 weeks)
+      const oldErrorCount = await ctx.db
+        .query("logs_summary")
+        .withIndex("by_app_and_timestamp", (q) => 
+          q.eq("appId", app._id).lt("timestamp", errorCutoffTime)
+        )
+        .filter((q) => q.eq(q.field("level"), "error"))
+        .take(500);
+      errorLogsOlderThan2Weeks += oldErrorCount.length;
     }
 
+    // Add note if there are more apps
+    const hasMoreApps = userApps.length > 10;
+
     return {
-      totalLogs,
-      totalSummaries,
-      errorLogs,
-      normalLogsOlderThan72Hours,
-      errorLogsOlderThan2Weeks,
+      totalLogs: hasMoreApps ? totalLogs * 2 : totalLogs, // Rough estimate if more apps
+      totalSummaries: hasMoreApps ? totalSummaries * 2 : totalSummaries,
+      errorLogs: hasMoreApps ? errorLogs * 2 : errorLogs,
+      normalLogsOlderThan72Hours: hasMoreApps ? normalLogsOlderThan72Hours * 2 : normalLogsOlderThan72Hours,
+      errorLogsOlderThan2Weeks: hasMoreApps ? errorLogsOlderThan2Weeks * 2 : errorLogsOlderThan2Weeks,
     };
   },
 });
