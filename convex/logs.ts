@@ -390,55 +390,171 @@ export const clearLogs = mutation({
   },
 });
 
-// Internal cleanup function for old logs
+// Internal cleanup function for old logs with differential retention
 export const cleanupOldLogs = internalMutation({
-  args: {
-    retentionDays: v.optional(v.number()), // Default 30 days
-  },
+  args: {},
+  returns: v.object({
+    deletedLogs: v.number(),
+    deletedSummaries: v.number(),
+    hasMore: v.boolean(),
+  }),
   handler: async (ctx, args) => {
-    const retentionDays = args.retentionDays || 30;
-    const cutoffTime = Date.now() - (retentionDays * 24 * 60 * 60 * 1000);
+    // Different retention periods
+    const normalLogRetentionHours = 72; // 3 days for normal logs
+    const errorLogRetentionDays = 14; // 2 weeks for error logs
+    
+    const normalCutoffTime = Date.now() - (normalLogRetentionHours * 60 * 60 * 1000);
+    const errorCutoffTime = Date.now() - (errorLogRetentionDays * 24 * 60 * 60 * 1000);
 
-    // Get old logs (limit to 100 at a time for performance)
-    const oldLogs = await ctx.db
+    // Get old normal logs (non-error logs older than 72 hours)
+    const oldNormalLogs = await ctx.db
       .query("logs")
-      .withIndex("by_timestamp", (q) => q.lt("timestamp", cutoffTime))
-      .take(100);
+      .withIndex("by_timestamp", (q) => q.lt("timestamp", normalCutoffTime))
+      .filter((q) => q.neq(q.field("level"), "error"))
+      .take(50);
 
-    const oldSummaries = await ctx.db
+    // Get old error logs (error logs older than 2 weeks)
+    const oldErrorLogs = await ctx.db
+      .query("logs")
+      .withIndex("by_timestamp", (q) => q.lt("timestamp", errorCutoffTime))
+      .filter((q) => q.eq(q.field("level"), "error"))
+      .take(50);
+
+    // Get corresponding old summaries for normal logs
+    const oldNormalSummaries = await ctx.db
       .query("logs_summary")
-      .withIndex("by_timestamp", (q) => q.lt("timestamp", cutoffTime))
-      .take(100);
+      .withIndex("by_timestamp", (q) => q.lt("timestamp", normalCutoffTime))
+      .filter((q) => q.neq(q.field("level"), "error"))
+      .take(50);
+
+    // Get corresponding old summaries for error logs
+    const oldErrorSummaries = await ctx.db
+      .query("logs_summary")
+      .withIndex("by_timestamp", (q) => q.lt("timestamp", errorCutoffTime))
+      .filter((q) => q.eq(q.field("level"), "error"))
+      .take(50);
 
     // Delete old logs and summaries
-    for (const log of oldLogs) {
+    const allOldLogs = [...oldNormalLogs, ...oldErrorLogs];
+    const allOldSummaries = [...oldNormalSummaries, ...oldErrorSummaries];
+
+    for (const log of allOldLogs) {
       await ctx.db.delete(log._id);
     }
-    for (const summary of oldSummaries) {
+    for (const summary of allOldSummaries) {
       await ctx.db.delete(summary._id);
     }
 
     return {
-      deletedLogs: oldLogs.length,
-      deletedSummaries: oldSummaries.length,
-      hasMore: oldLogs.length === 100 || oldSummaries.length === 100,
+      deletedLogs: allOldLogs.length,
+      deletedSummaries: allOldSummaries.length,
+      hasMore: allOldLogs.length === 100 || allOldSummaries.length === 100,
     };
   },
 });
 
-// Public cleanup function that users can call
+// Public cleanup function that users can call with differential retention
 export const cleanupOldLogsManual = mutation({
-  args: {
-    retentionDays: v.optional(v.number()), // Default 30 days
-  },
+  args: {},
+  returns: v.object({
+    deletedCount: v.number(),
+    hasMore: v.boolean(),
+  }),
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
     if (!userId) {
       throw new Error("Must be authenticated");
     }
 
-    const retentionDays = args.retentionDays || 30;
-    const cutoffTime = Date.now() - (retentionDays * 24 * 60 * 60 * 1000);
+    // Different retention periods
+    const normalLogRetentionHours = 72; // 3 days for normal logs
+    const errorLogRetentionDays = 14; // 2 weeks for error logs
+    
+    const normalCutoffTime = Date.now() - (normalLogRetentionHours * 60 * 60 * 1000);
+    const errorCutoffTime = Date.now() - (errorLogRetentionDays * 24 * 60 * 60 * 1000);
+
+    // Get user's apps
+    const userApps = await ctx.db
+      .query("apps")
+      .withIndex("by_created_by", (q) => q.eq("createdBy", userId))
+      .collect();
+
+    let deletedLogs = 0;
+    let deletedSummaries = 0;
+    
+    for (const app of userApps) {
+      // Get old normal logs for this app
+      const oldNormalLogsForApp = await ctx.db
+        .query("logs")
+        .withIndex("by_app_and_timestamp", (q) => 
+          q.eq("appId", app._id).lt("timestamp", normalCutoffTime)
+        )
+        .filter((q) => q.neq(q.field("level"), "error"))
+        .take(25);
+
+      // Get old error logs for this app
+      const oldErrorLogsForApp = await ctx.db
+        .query("logs")
+        .withIndex("by_app_and_timestamp", (q) => 
+          q.eq("appId", app._id).lt("timestamp", errorCutoffTime)
+        )
+        .filter((q) => q.eq(q.field("level"), "error"))
+        .take(25);
+
+      // Get old normal summaries for this app
+      const oldNormalSummariesForApp = await ctx.db
+        .query("logs_summary")
+        .withIndex("by_app_and_timestamp", (q) => 
+          q.eq("appId", app._id).lt("timestamp", normalCutoffTime)
+        )
+        .filter((q) => q.neq(q.field("level"), "error"))
+        .take(25);
+
+      // Get old error summaries for this app
+      const oldErrorSummariesForApp = await ctx.db
+        .query("logs_summary")
+        .withIndex("by_app_and_timestamp", (q) => 
+          q.eq("appId", app._id).lt("timestamp", errorCutoffTime)
+        )
+        .filter((q) => q.eq(q.field("level"), "error"))
+        .take(25);
+
+      // Delete old logs and summaries for this app
+      const allOldLogs = [...oldNormalLogsForApp, ...oldErrorLogsForApp];
+      const allOldSummaries = [...oldNormalSummariesForApp, ...oldErrorSummariesForApp];
+
+      for (const log of allOldLogs) {
+        await ctx.db.delete(log._id);
+        deletedLogs++;
+      }
+      for (const summary of allOldSummaries) {
+        await ctx.db.delete(summary._id);
+        deletedSummaries++;
+      }
+    }
+
+    return {
+      deletedCount: deletedLogs + deletedSummaries,
+      hasMore: deletedLogs >= (userApps.length * 25) || deletedSummaries >= (userApps.length * 25),
+    };
+  },
+});
+
+// Add function to get log statistics for dashboard
+export const getLogStats = query({
+  args: {},
+  returns: v.object({
+    totalLogs: v.number(),
+    totalSummaries: v.number(),
+    errorLogs: v.number(),
+    normalLogsOlderThan72Hours: v.number(),
+    errorLogsOlderThan2Weeks: v.number(),
+  }),
+  handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) {
+      throw new Error("Must be authenticated");
+    }
 
     // Get user's apps
     const userApps = await ctx.db
@@ -448,40 +564,112 @@ export const cleanupOldLogsManual = mutation({
     
     const appIds = userApps.map(app => app._id);
 
-    // Get old logs using indexed queries instead of collect()
-    let deletedLogs = 0;
-    let deletedSummaries = 0;
-    
+    // Calculate cutoff times
+    const normalCutoffTime = Date.now() - (72 * 60 * 60 * 1000); // 72 hours
+    const errorCutoffTime = Date.now() - (14 * 24 * 60 * 60 * 1000); // 2 weeks
+
+    let totalLogs = 0;
+    let totalSummaries = 0;
+    let errorLogs = 0;
+    let normalLogsOlderThan72Hours = 0;
+    let errorLogsOlderThan2Weeks = 0;
+
     for (const app of userApps) {
-      // Use indexed query for each app
-      const oldLogsForApp = await ctx.db
+      // Count total logs for this app
+      const appLogs = await ctx.db
         .query("logs")
-        .withIndex("by_app_and_timestamp", (q) => 
-          q.eq("appId", app._id).lt("timestamp", cutoffTime)
-        )
-        .take(50); // Limit per app
+        .withIndex("by_app_and_timestamp", (q) => q.eq("appId", app._id))
+        .collect();
+      totalLogs += appLogs.length;
 
-      const oldSummariesForApp = await ctx.db
+      // Count total summaries for this app
+      const appSummaries = await ctx.db
         .query("logs_summary")
-        .withIndex("by_app_and_timestamp", (q) => 
-          q.eq("appId", app._id).lt("timestamp", cutoffTime)
-        )
-        .take(50); // Limit per app
+        .withIndex("by_app_and_timestamp", (q) => q.eq("appId", app._id))
+        .collect();
+      totalSummaries += appSummaries.length;
 
-      // Delete old logs and summaries for this app
-      for (const log of oldLogsForApp) {
-        await ctx.db.delete(log._id);
-        deletedLogs++;
-      }
-      for (const summary of oldSummariesForApp) {
-        await ctx.db.delete(summary._id);
-        deletedSummaries++;
-      }
+      // Count error logs
+      const appErrorLogs = appLogs.filter(log => log.level === "error");
+      errorLogs += appErrorLogs.length;
+
+      // Count old normal logs
+      const oldNormalLogs = appLogs.filter(log => 
+        log.level !== "error" && log.timestamp < normalCutoffTime
+      );
+      normalLogsOlderThan72Hours += oldNormalLogs.length;
+
+      // Count old error logs
+      const oldErrorLogs = appErrorLogs.filter(log => 
+        log.timestamp < errorCutoffTime
+      );
+      errorLogsOlderThan2Weeks += oldErrorLogs.length;
     }
 
     return {
-      deletedCount: deletedLogs + deletedSummaries,
-      hasMore: deletedLogs === (userApps.length * 50) || deletedSummaries === (userApps.length * 50),
+      totalLogs,
+      totalSummaries,
+      errorLogs,
+      normalLogsOlderThan72Hours,
+      errorLogsOlderThan2Weeks,
+    };
+  },
+});
+
+// Superadmin function to completely wipe all log data
+export const superAdminWipeAllLogs = mutation({
+  args: {
+    confirmationCode: v.string(),
+  },
+  returns: v.object({
+    deletedLogs: v.number(),
+    deletedSummaries: v.number(),
+    deletedMetrics: v.number(),
+  }),
+  handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) {
+      throw new Error("Must be authenticated");
+    }
+
+    // For now, allowing all authenticated users access to superadmin functions
+    // In production, you should implement proper role-based access control
+
+    // Require confirmation code
+    if (args.confirmationCode !== "WIPE_ALL_LOGS_CONFIRM") {
+      throw new Error("Invalid confirmation code");
+    }
+
+    // Get all logs, summaries, and metrics
+    const allLogs = await ctx.db
+      .query("logs")
+      .collect();
+
+    const allSummaries = await ctx.db
+      .query("logs_summary")
+      .collect();
+
+    const allMetrics = await ctx.db
+      .query("log_metrics")
+      .collect();
+
+    // Delete everything
+    for (const log of allLogs) {
+      await ctx.db.delete(log._id);
+    }
+    
+    for (const summary of allSummaries) {
+      await ctx.db.delete(summary._id);
+    }
+
+    for (const metric of allMetrics) {
+      await ctx.db.delete(metric._id);
+    }
+
+    return {
+      deletedLogs: allLogs.length,
+      deletedSummaries: allSummaries.length,
+      deletedMetrics: allMetrics.length,
     };
   },
 });

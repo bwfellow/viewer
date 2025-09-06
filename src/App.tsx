@@ -7,10 +7,11 @@ import { OptimizedLogViewer } from "./OptimizedLogViewer";
 import { AppManager } from "./AppManager";
 import { AlertManager } from "./AlertManager";
 import { SetupGuide } from "./SetupGuide";
+import { SuperAdminDashboard } from "./SuperAdminDashboard";
 import { useState } from "react";
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<"logs" | "apps" | "alerts" | "setup">("logs");
+  const [activeTab, setActiveTab] = useState<"logs" | "apps" | "alerts" | "setup" | "superadmin">("logs");
 
   return (
     <div className="min-h-screen flex flex-col bg-gray-50">
@@ -27,8 +28,8 @@ export default function App() {
 }
 
 function Content({ activeTab, setActiveTab }: { 
-  activeTab: "logs" | "apps" | "alerts" | "setup", 
-  setActiveTab: (tab: "logs" | "apps" | "alerts" | "setup") => void 
+  activeTab: "logs" | "apps" | "alerts" | "setup" | "superadmin", 
+  setActiveTab: (tab: "logs" | "apps" | "alerts" | "setup" | "superadmin") => void 
 }) {
   const loggedInUser = useQuery(api.auth.loggedInUser);
 
@@ -50,6 +51,11 @@ function Content({ activeTab, setActiveTab }: {
           <p className="text-gray-600">
             Welcome back, {loggedInUser?.email ?? "friend"}! Monitor all your applications from one central dashboard.
           </p>
+          {/* Debug info */}
+          <div className="mt-2 text-xs text-gray-500 bg-gray-100 p-2 rounded">
+            Debug: Email = "{loggedInUser?.email || 'No email found'}" | 
+            SuperAdmin Access = {loggedInUser ? "✅ YES (All users for now)" : "❌ NO"}
+          </div>
         </div>
 
         {/* Tab Navigation */}
@@ -95,6 +101,18 @@ function Content({ activeTab, setActiveTab }: {
             >
               Setup Guide
             </button>
+            {loggedInUser && (
+              <button
+                onClick={() => setActiveTab("superadmin")}
+                className={`py-2 px-1 border-b-2 font-medium text-sm ${
+                  activeTab === "superadmin"
+                    ? "border-red-500 text-red-600"
+                    : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                }`}
+              >
+                🔐 SuperAdmin
+              </button>
+            )}
           </nav>
         </div>
 
@@ -103,6 +121,7 @@ function Content({ activeTab, setActiveTab }: {
         {activeTab === "apps" && <AppManager />}
         {activeTab === "alerts" && <AlertManager />}
         {activeTab === "setup" && <SetupGuide />}
+        {activeTab === "superadmin" && <SuperAdminDashboard />}
       </Authenticated>
       
       <Unauthenticated>

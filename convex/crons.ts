@@ -8,28 +8,29 @@ crons.interval(
   "check alerts",
   { minutes: 5 },
   internal.alerts.checkAlerts,
+  {}
 );
 
-// Cleanup old logs daily at 2 AM
-crons.daily(
+// Cleanup old logs every 6 hours (using differential retention: 72h for normal logs, 2 weeks for errors)
+crons.interval(
   "cleanup old logs",
-  { hourUTC: 2, minuteUTC: 0 },
+  { hours: 6 },
   internal.logs.cleanupOldLogs,
-  { retentionDays: 30 }
+  {}
 );
 
 // Aggregate metrics every hour at 5 minutes past the hour
-crons.hourly(
+crons.interval(
   "aggregate hourly metrics",
-  { minuteUTC: 5 },
+  { hours: 1 },
   internal.metrics.aggregateHourlyMetrics,
   {}
 );
 
-// Cleanup old metrics weekly at 3 AM on Sunday
-crons.weekly(
+// Cleanup old metrics once per day (every 24 hours)
+crons.interval(
   "cleanup old metrics",
-  { dayOfWeek: "sunday", hourUTC: 3, minuteUTC: 0 },
+  { hours: 24 },
   internal.metrics.cleanupOldMetrics,
   { retentionDays: 90 }
 );
